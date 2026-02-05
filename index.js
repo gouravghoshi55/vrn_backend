@@ -1,6 +1,4 @@
 require("dotenv").config();
-console.log("EMAIL:", process.env.GOOGLE_CLIENT_EMAIL);
-console.log("KEY EXISTS:", !!process.env.GOOGLE_PRIVATE_KEY);
 const express = require("express");
 const cors = require("cors");
 const { google } = require("googleapis");

@@ -61,18 +61,14 @@ function parseDate(dateStr) {
   return new Date(dateStr);
 }
 function getCurrentTimestamp() {
-  const now = new Date().toLocaleString("en-IN", {
+  const dt = new Date().toLocaleString("en-IN", {
     timeZone: "Asia/Kolkata",
     hour12: false,
   });
 
-  const [date, time] = now.split(", ");
-
-  const [day, month, year] = date.split("/");
-  const [hours, minutes, seconds] = time.split(":");
-
-  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+  return dt.replace(",", "");
 }
+
 
 router.get("/nbdin", async (req, res) => {
   try {

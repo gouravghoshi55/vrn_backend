@@ -37,10 +37,12 @@ async function getFilteredLeads(sheets, sheetName) {
       // W = index 22 (Planned), X = index 23 (Actual), AB = index 27 (FollowUp Count)
       const plannedDate = row[22] ? row[22].trim() : "";
       const actualDate = row[23] ? row[23].trim() : "";
+      const status = row[24] ? row[24].trim() : "";
       const followUpCount = row[27] ? row[27].trim() : "0";
 
-      // Condition: Planned (W) NOT NULL and Actual (X) NULL
-      if (plannedDate && !actualDate) {
+      const statusLower = status.toLowerCase();
+
+      if (plannedDate && (!actualDate || statusLower === "no conversation")) {
         filteredLeads.push({
           rowIndex: index + 8,
           sheetName: sheetName,
@@ -141,7 +143,11 @@ router.post("/update", async (req, res) => {
       currentFollowUpCount,
     } = req.body;
 
-    console.log("📝 Updating After Field Visit record:", { sheetName, rowIndex, status });
+    console.log("📝 Updating After Field Visit record:", {
+      sheetName,
+      rowIndex,
+      status,
+    });
 
     if (!sheetName || !rowIndex || !status) {
       return res.status(400).json({

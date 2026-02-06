@@ -47,13 +47,13 @@ app.use((req, res, next) => {
 // ============================================
 const nbdinRoutes = require("./routes/nbdinRoutes");
 const fieldVisitRoutes = require("./routes/fieldVisitRoutes");
+const afterFieldVisitRoutes = require("./routes/afterFieldVisitRoutes");
 // ============================================
 // Use Routes
 // ============================================
 app.use("/api/leads", nbdinRoutes);
 app.use("/api/field-visit", fieldVisitRoutes);
-// app.use("/nbdin/update", nbdinRoutes);
-// app.use("/field-visit/update", fieldVisitRoutes);
+app.use("/api/after-field-visit", afterFieldVisitRoutes);
 // ============================================
 // Health Check Route
 // ============================================
@@ -62,10 +62,6 @@ app.get("/", (req, res) => {
     message: "🚀 Backend Server is Running!",
     status: "OK",
     timestamp: new Date().toISOString(),
-    endpoints: {
-      nbdin: "/api/leads/nbdin",
-      fieldVisit: "/api/field-visit/list",
-    },
   });
 });
 app.get("/api/health", (req, res) => {
@@ -92,5 +88,6 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`📊 NBDIN API: /api/leads/nbdin`);
-  console.log(`🏠 Field Visit API: /api/field-visit/list`);
+  console.log(`📊 Field Visit API: /api/field-visit/list`);
+  console.log(`📊 After Field Visit API: /api/after-field-visit/list`);
 });

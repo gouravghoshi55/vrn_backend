@@ -61,13 +61,16 @@ function parseDate(dateStr) {
   return new Date(dateStr);
 }
 function getCurrentTimestamp() {
-  const now = new Date();
-  const day = String(now.getDate()).padStart(2, "0");
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const year = now.getFullYear();
-  const hours = String(now.getHours()).padStart(2, "0");
-  const minutes = String(now.getMinutes()).padStart(2, "0");
-  const seconds = String(now.getSeconds()).padStart(2, "0");
+  const now = new Date().toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour12: false,
+  });
+
+  const [date, time] = now.split(", ");
+
+  const [day, month, year] = date.split("/");
+  const [hours, minutes, seconds] = time.split(":");
+
   return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 

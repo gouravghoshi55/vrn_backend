@@ -17,28 +17,28 @@ async function getFilteredLeads(sheets, sheetName) {
     const rows = response.data.values || [];
     const filteredLeads = [];
     rows.forEach((row, index) => {
-      const status = row[12] ? row[12].trim() : "";           // Column M (Status)
-      const plannedDate = row[10] ? row[10].trim() : "";      // Column K (Planned)
-      const actualDate = row[11] ? row[11].trim() : "";       // Column L (Actual)
-      const followUpCount = row[15] ? row[15].trim() : "0";   // Column P (FollowUp Count)
-  
+      const status = row[12] ? row[12].trim() : ""; // Column M (Status)
+      const plannedDate = row[10] ? row[10].trim() : ""; // Column K (Planned)
+      const actualDate = row[11] ? row[11].trim() : ""; // Column L (Actual)
+      const followUpCount = row[15] ? row[15].trim() : "0"; // Column P (FollowUp Count)
+
       const statusLower = status.toLowerCase();
-      if (status === "" || statusLower === "call again") {
+      if (status === "" || statusLower === "no conversation") {
         filteredLeads.push({
-          rowIndex: index + 8,                // Actual row number in sheet
+          rowIndex: index + 8, // Actual row number in sheet
           sheetName: sheetName,
-          uniqueId: row[1] || "",             // Column B
-          customerName: row[2] || "",         // Column C
-          customerContact: row[3] || "",      // Column D
-          interestedIn: row[4] || "",         // Column E
-          projectSelection: row[5] || "",     // Column F
-          leadSource: row[6] || "",           // Column G
-          leadGenNumber: row[7] || "",        // Column H
-          leadGenName: row[8] || "",          // Column I
-          plannedDate: plannedDate,           // Column K
-          actualDate: actualDate,             // Column L
-          status: status || "Pending",        // Column M
-          followUpCount: parseInt(followUpCount) || 0,  // Column P
+          uniqueId: row[1] || "", // Column B
+          customerName: row[2] || "", // Column C
+          customerContact: row[3] || "", // Column D
+          interestedIn: row[4] || "", // Column E
+          projectSelection: row[5] || "", // Column F
+          leadSource: row[6] || "", // Column G
+          leadGenNumber: row[7] || "", // Column H
+          leadGenName: row[8] || "", // Column I
+          plannedDate: plannedDate, // Column K
+          actualDate: actualDate, // Column L
+          status: status || "Pending", // Column M
+          followUpCount: parseInt(followUpCount) || 0, // Column P
         });
       }
     });
@@ -81,7 +81,7 @@ router.get("/nbdin", async (req, res) => {
     console.log(`   End User Leads: ${endUserLeads.length}`);
     console.log(`   Channel Partner Leads: ${channelPartnerLeads.length}`);
     let allLeads = [...endUserLeads, ...channelPartnerLeads];
-    
+
     allLeads.sort((a, b) => {
       const dateA = parseDate(a.plannedDate);
       const dateB = parseDate(b.plannedDate);
@@ -105,13 +105,13 @@ router.get("/nbdin", async (req, res) => {
 
 router.post("/nbdin/update", async (req, res) => {
   try {
-    const { 
-      sheetName, 
-      rowIndex, 
-      status, 
-      fieldVisitDate, 
+    const {
+      sheetName,
+      rowIndex,
+      status,
+      fieldVisitDate,
       nextFollowUpDate,
-      currentFollowUpCount 
+      currentFollowUpCount,
     } = req.body;
     console.log("📝 Updating NBDIN record:", { sheetName, rowIndex, status });
     // Validation
@@ -131,7 +131,7 @@ router.post("/nbdin/update", async (req, res) => {
         values: [[nextFollowUpDate]],
       });
     }
-    
+
     updates.push({
       range: `'${sheetName}'!L${rowIndex}`,
       values: [[timestamp]],
@@ -141,26 +141,26 @@ router.post("/nbdin/update", async (req, res) => {
       range: `'${sheetName}'!M${rowIndex}`,
       values: [[status]],
     });
-   
+
     if (fieldVisitDate) {
       updates.push({
         range: `'${sheetName}'!N${rowIndex}`,
         values: [[fieldVisitDate]],
       });
     }
-    
+
     if (nextFollowUpDate) {
       updates.push({
         range: `'${sheetName}'!O${rowIndex}`,
         values: [[nextFollowUpDate]],
       });
     }
-    
+
     updates.push({
       range: `'${sheetName}'!P${rowIndex}`,
       values: [[newFollowUpCount.toString()]],
     });
-    
+
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {

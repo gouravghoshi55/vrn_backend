@@ -48,12 +48,14 @@ app.use((req, res, next) => {
 const nbdinRoutes = require("./routes/nbdinRoutes");
 const fieldVisitRoutes = require("./routes/fieldVisitRoutes");
 const afterFieldVisitRoutes = require("./routes/afterFieldVisitRoutes");
+const meetingNbdRoutes = require("./routes/meetingNbdRoutes");
 // ============================================
 // Use Routes
 // ============================================
 app.use("/api/leads", nbdinRoutes);
 app.use("/api/field-visit", fieldVisitRoutes);
 app.use("/api/after-field-visit", afterFieldVisitRoutes);
+app.use("/api/meeting-nbd", meetingNbdRoutes);
 // ============================================
 // Health Check Route
 // ============================================

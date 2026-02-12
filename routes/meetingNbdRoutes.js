@@ -76,12 +76,12 @@ async function getFilteredLeads(sheets, sheetName) {
     // AH = 33 (Status)
     // AJ = 35 (Current Meeting Remarks) -> WRITE HERE
 
-    const plannedDate = row[31] ? row[31].trim() : "";   // Column AF
-    const actualDate = row[32] ? row[32].trim() : "";    // Column AG
-    const status = row[33] ? row[33].trim() : "";        // Column AH
+    const plannedDate = row[32] ? row[32].trim() : "";   // Column AF
+    const actualDate = row[33] ? row[33].trim() : "";    // Column AG
+    const status = row[34] ? row[34].trim() : "";        // Column AH
     
     // CHANGE: Hamein AE (30) padhna hai list dikhane ke liye
-    const previousRemarks = row[30] ? row[30].trim() : ""; 
+    const previousRemarks = row[31] ? row[31].trim() : ""; 
 
     // Filter: Show only if Planned exists AND Actual is empty
     if (plannedDate && !actualDate) {

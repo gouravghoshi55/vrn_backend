@@ -67,13 +67,13 @@ async function getFilteredLeads(sheets, sheetName) {
     // X=23 (Field Visit Remarks), Y=24 (Planned), Z=25 (Actual), AA=26 (Status)
     // AD=29 (Count), AE=30 (Current Step Remarks)
 
-    const plannedDate = row[24] ? row[24].trim() : ""; // Column Y
-    const actualDate = row[25] ? row[25].trim() : "";  // Column Z
-    const status = row[26] ? row[26].trim() : "";      // Column AA
-    const followUpCount = row[29] ? row[29].trim() : "0"; // Column AD
+    const plannedDate = row[25] ? row[25].trim() : ""; // Column Y
+    const actualDate = row[26] ? row[26].trim() : "";  // Column Z
+    const status = row[27] ? row[27].trim() : "";      // Column AA
+    const followUpCount = row[30] ? row[30].trim() : "0"; // Column AD
     
-    // CHANGE: Hum 'X' (Index 23) padhenge taaki Sales person pichla remark dekh sake
-    const previousRemarks = row[23] ? row[23].trim() : ""; 
+    // CHANGE: Hum 'Y' (Index 23) padhenge taaki Sales person pichla remark dekh sake
+    const previousRemarks = row[24] ? row[24].trim() : ""; 
 
     // Filter Logic: Show if Planned exists AND Actual is empty
     if (plannedDate && !actualDate) {

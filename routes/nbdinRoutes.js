@@ -115,8 +115,9 @@ router.post("/nbdin/update", async (req, res) => {
       nextFollowUpDate,
       currentFollowUpCount,
     } = req.body;
+
     console.log("📝 Updating NBDIN record:", { sheetName, rowIndex, status });
-    
+
     // Validation
     if (!sheetName || !rowIndex || !status) {
       return res.status(400).json({
@@ -128,51 +129,55 @@ router.post("/nbdin/update", async (req, res) => {
     // Current timestamp for Actual column
     const timestamp = getCurrentTimestamp();
     const newFollowUpCount = (parseInt(currentFollowUpCount) || 0) + 1;
+    
     const updates = [];
 
-    // --- UPDATED WRITING LOGIC BASED ON NEW COLUMNS ---
+    // --- CORRECTION START: NEW COLUMN MAPPING BASED ON SCREENSHOT ---
 
-    // 1. Update 'Planned' (Column M) with Next FollowUp Date
+    // 1. Update 'Planned' Column (Ab Column M hai)
+    // Hum 'Planned' mein bhi Next FollowUp Date dalte hain taki agli baar sorting sahi ho
     if (nextFollowUpDate) {
       updates.push({
-        range: `'${sheetName}'!M${rowIndex}`, // Changed from K to M
+        range: `'${sheetName}'!M${rowIndex}`, // CHANGED: K -> M
         values: [[nextFollowUpDate]],
       });
     }
 
-    // 2. Update 'Actual' (Column N) with Timestamp
+    // 2. Update 'Actual' Column (Ab Column N hai)
     updates.push({
-      range: `'${sheetName}'!N${rowIndex}`, // Changed from L to N
+      range: `'${sheetName}'!N${rowIndex}`, // CHANGED: L -> N
       values: [[timestamp]],
     });
 
-    // 3. Update 'Status' (Column O)
+    // 3. Update 'Status' Column (Ab Column O hai)
     updates.push({
-      range: `'${sheetName}'!O${rowIndex}`, // Changed from M to O
+      range: `'${sheetName}'!O${rowIndex}`, // CHANGED: M -> O
       values: [[status]],
     });
 
-    // 4. Update 'Field Visit Schedule date' (Column P)
+    // 4. Update 'Field Visit Schedule date' Column (Ab Column P hai)
     if (fieldVisitDate) {
       updates.push({
-        range: `'${sheetName}'!P${rowIndex}`, // Changed from N to P
+        range: `'${sheetName}'!P${rowIndex}`, // CHANGED: N -> P
         values: [[fieldVisitDate]],
       });
     }
 
-    // 5. Update 'Next FollowUP Date' (Column Q)
+    // 5. Update 'Next FollowUP Date' Column (Ab Column Q hai)
     if (nextFollowUpDate) {
       updates.push({
-        range: `'${sheetName}'!Q${rowIndex}`, // Changed from O to Q
+        range: `'${sheetName}'!Q${rowIndex}`, // CHANGED: O -> Q
         values: [[nextFollowUpDate]],
       });
     }
 
-    // 6. Update 'FollowUP Count' (Column R)
+    // 6. Update 'FollowUP Count' Column (Ab Column R hai)
     updates.push({
-      range: `'${sheetName}'!R${rowIndex}`, // Changed from P to R
+      range: `'${sheetName}'!R${rowIndex}`, // CHANGED: P -> R
       values: [[newFollowUpCount.toString()]],
     });
+
+    // --- CORRECTION END ---
 
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
@@ -184,11 +189,11 @@ router.post("/nbdin/update", async (req, res) => {
 
     console.log(`✅ Updated row ${rowIndex} in ${sheetName}`);
     console.log(`   Status: ${status}`);
-    console.log(`   Field Visit Date: ${fieldVisitDate || "N/A"}`);
-    console.log(`   Next FollowUp Date: ${nextFollowUpDate || "N/A"}`);
-    console.log(`   Actual Timestamp: ${timestamp}`);
-    console.log(`   FollowUp Count: ${newFollowUpCount}`);
-    
+    console.log(`   Field Visit Date: ${fieldVisitDate || "N/A"} -> Col P`);
+    console.log(`   Next FollowUp Date: ${nextFollowUpDate || "N/A"} -> Col Q`);
+    console.log(`   Actual Timestamp: ${timestamp} -> Col N`);
+    console.log(`   FollowUp Count: ${newFollowUpCount} -> Col R`);
+
     res.json({
       success: true,
       message: "Lead updated successfully",

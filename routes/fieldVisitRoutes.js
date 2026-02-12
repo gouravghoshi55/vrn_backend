@@ -67,12 +67,12 @@ async function getFilteredLeads(sheets, sheetName) {
       // V = 21 (Status)
       // X = 23 (Field Visit Remarks) <-- Yahan write karna hai
 
-      const plannedDate = row[19] ? row[19].trim() : "";
-      const actualDate = row[20] ? row[20].trim() : "";
-      const status = row[21] ? row[21].trim() : "";
+      const plannedDate = row[20] ? row[20].trim() : "";
+      const actualDate = row[21] ? row[21].trim() : "";
+      const status = row[22] ? row[22].trim() : "";
       
-      // CHANGE: Pehle row[23] (X) padh rahe the, ab row[18] (S) padhenge display ke liye
-      const remarks = row[18] ? row[18].trim() : ""; 
+      // CHANGE: Pehle row[23] (X) padh rahe the, ab row[18] (T) padhenge display ke liye
+      const remarks = row[19] ? row[19].trim() : ""; 
 
       // List mein tabhi dikhega jab Planned ho aur Actual khali ho
       if (plannedDate && !actualDate) {

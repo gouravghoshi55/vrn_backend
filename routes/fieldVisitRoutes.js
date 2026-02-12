@@ -1,18 +1,22 @@
 const express = require("express");
 const router = express.Router();
+
 // ============================================
 // Configuration
 // ============================================
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+
 const SHEETS = {
   END_USER: "END USER LEADS FMS",
   CHANNEL_PARTNER: "Channel Partener Lead FMS",
 };
+
 // ============================================
 // Helper Functions
 // ============================================
+
 /**
- * Current timestamp generate karo
+ * Current timestamp generate karo (DD/MM/YYYY HH:mm:ss)
  */
 function getCurrentTimestamp() {
   const now = new Date();
@@ -24,8 +28,9 @@ function getCurrentTimestamp() {
   const seconds = String(now.getSeconds()).padStart(2, "0");
   return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
+
 /**
- * Date ko comparable format mein convert karo (sorting ke liye)
+ * Date parse helper
  */
 function parseDate(dateStr) {
   if (!dateStr) return new Date(0);
@@ -38,39 +43,40 @@ function parseDate(dateStr) {
   }
   return new Date(dateStr);
 }
+
 /**
  * Sheet se filtered data lao
- * CONDITION: Column R (Planned) NOT NULL AND Column S (Actual) NULL
- * Row 8 se start
+ * CONDITION: Planned (T) is present AND Actual (U) is empty
  * 
- * COLUMN STRUCTURE:
- * B=1 (Unique ID), C=2 (Customer Name), D=3 (Contact), 
- * E=4 (Interested In), F=5 (Project Selection), G=6 (Lead Source), 
- * H=7 (Lead Gen Number), I=8 (Lead Gen Name)
- * R=17 (Planned), S=18 (Actual), T=19 (Status), V=21 (Remarks)
+ * COLUMN MAPPING (Based on Screenshot):
+ * T (19) = Planned
+ * U (20) = Actual
+ * V (21) = Status
+ * X (23) = Remarks
  */
 async function getFilteredLeads(sheets, sheetName) {
   try {
-    // A8:V tak data fetch karo (Row 8 se start, Column A to V)
+    // UPDATED: Range increased to 'X' to cover Remarks
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${sheetName}'!A8:V`,
+      range: `'${sheetName}'!A8:X`,
     });
+    
     const rows = response.data.values || [];
     const filteredLeads = [];
+    
     rows.forEach((row, index) => {
-      // Column positions (0-indexed from A):
-      // A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, I=8
-      // R=17 (Planned), S=18 (Actual), T=19 (Status), V=21 (Remarks)
-      
-      const plannedDate = row[20] ? row[20].trim() : "";  // Column R (Planned)
-      const actualDate = row[21] ? row[21].trim() : "";   // Column S (Actual)
-      const status = row[22] ? row[22].trim() : "";       // Column T (Status)
-      const remarks = row[24] ? row[24].trim() : "";      // Column V (Remarks)
-      // CONDITION: Planned (R) NOT NULL AND Actual (S) NULL
+      // Corrected Indices:
+      const plannedDate = row[19] ? row[19].trim() : "";  // Column T (Index 19)
+      const actualDate = row[20] ? row[20].trim() : "";   // Column U (Index 20)
+      const status = row[21] ? row[21].trim() : "";       // Column V (Index 21)
+      const remarks = row[23] ? row[23].trim() : "";      // Column X (Index 23)
+
+      // LOGIC: Show lead if Planned exists AND (Actual is empty OR Status is Pending)
+      // Usually for Step 3 list: plannedDate && !actualDate
       if (plannedDate && !actualDate) {
         filteredLeads.push({
-          rowIndex: index + 8,                // Actual row number in sheet
+          rowIndex: index + 8,                // Actual row number
           sheetName: sheetName,
           uniqueId: row[1] || "",             // Column B
           customerName: row[2] || "",         // Column C
@@ -80,9 +86,9 @@ async function getFilteredLeads(sheets, sheetName) {
           leadSource: row[6] || "",           // Column G
           leadGenNumber: row[7] || "",        // Column H
           leadGenName: row[8] || "",          // Column I
-          plannedDate: plannedDate,           // Column R
-          status: status || "Pending",        // Column T
-          remarks: remarks,                   // Column V
+          plannedDate: plannedDate,           // Column T
+          status: status || "Pending",        // Column V
+          remarks: remarks,                   // Column X
         });
       }
     });
@@ -92,33 +98,32 @@ async function getFilteredLeads(sheets, sheetName) {
     throw error;
   }
 }
+
 // ============================================
 // API ROUTES
 // ============================================
+
 /**
  * GET /api/field-visit/list
- * Dono sheets ka combined data - sorted by Planned Date (ascending)
- * CONDITION: Planned (R) NOT NULL AND Actual (S) NULL
  */
 router.get("/list", async (req, res) => {
   try {
-    console.log("📊 Fetching Field Visit data...");
-    console.log("   Condition: Planned (R) NOT NULL AND Actual (S) NULL");
-    // Dono sheets se parallel fetch karo
+    console.log("📊 Fetching Field Visit (Step 3) data...");
+    
     const [endUserLeads, channelPartnerLeads] = await Promise.all([
       getFilteredLeads(req.sheets, SHEETS.END_USER),
       getFilteredLeads(req.sheets, SHEETS.CHANNEL_PARTNER),
     ]);
-    console.log(`   End User Leads: ${endUserLeads.length}`);
-    console.log(`   Channel Partner Leads: ${channelPartnerLeads.length}`);
-    // Combine both arrays
+
     let allLeads = [...endUserLeads, ...channelPartnerLeads];
-    // Sort by Planned Date (ascending/increasing order)
+
+    // Sort by Planned Date
     allLeads.sort((a, b) => {
       const dateA = parseDate(a.plannedDate);
       const dateB = parseDate(b.plannedDate);
       return dateA - dateB;
     });
+
     console.log(`✅ Total Field Visit Leads: ${allLeads.length}`);
     res.json({
       success: true,
@@ -134,41 +139,47 @@ router.get("/list", async (req, res) => {
     });
   }
 });
+
 /**
  * POST /api/field-visit/update
- * Update Status (T), Remarks (V), and Actual timestamp (S)
+ * Updates:
+ * - Actual Date -> Column U
+ * - Status -> Column V
+ * - Remarks -> Column X
  */
 router.post("/update", async (req, res) => {
   try {
     const { sheetName, rowIndex, status, remarks } = req.body;
     console.log("📝 Updating Field Visit record:", { sheetName, rowIndex, status });
-    // Validation
+
     if (!sheetName || !rowIndex || !status) {
       return res.status(400).json({
         success: false,
-        error: "Missing required fields: sheetName, rowIndex, status",
+        error: "Missing required fields",
       });
     }
-    // Current timestamp for Actual column (S)
+
     const timestamp = getCurrentTimestamp();
-    // Batch update - S (Actual), T (Status), V (Remarks)
+    
+    // UPDATED WRITING LOGIC
     const updates = [
+      // 1. Update Actual (Column U)
       {
-        range: `'${sheetName}'!S${rowIndex}`,
+        range: `'${sheetName}'!U${rowIndex}`,
         values: [[timestamp]],
       },
+      // 2. Update Status (Column V)
       {
-        range: `'${sheetName}'!T${rowIndex}`,
+        range: `'${sheetName}'!V${rowIndex}`,
         values: [[status]],
       },
+      // 3. Update Remarks (Column X)
+      {
+        range: `'${sheetName}'!X${rowIndex}`,
+        values: [[remarks || ""]],
+      }
     ];
-    // Add remarks if provided
-    if (remarks) {
-      updates.push({
-        range: `'${sheetName}'!V${rowIndex}`,
-        values: [[remarks]],
-      });
-    }
+
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
@@ -176,10 +187,12 @@ router.post("/update", async (req, res) => {
         data: updates,
       },
     });
+
     console.log(`✅ Updated Field Visit row ${rowIndex} in ${sheetName}`);
-    console.log(`   Status: ${status}`);
-    console.log(`   Remarks: ${remarks || "N/A"}`);
-    console.log(`   Actual Timestamp: ${timestamp}`);
+    console.log(`   Actual (Col U): ${timestamp}`);
+    console.log(`   Status (Col V): ${status}`);
+    console.log(`   Remarks (Col X): ${remarks}`);
+
     res.json({
       success: true,
       message: "Field Visit updated successfully",
@@ -200,39 +213,21 @@ router.post("/update", async (req, res) => {
     });
   }
 });
-/**
- * DEBUG Route - Raw data dekhne ke liye
- * Browser: http://localhost:5000/api/field-visit/debug
- */
+
+// Debug Route to verify columns
 router.get("/debug", async (req, res) => {
   try {
     const response = await req.sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'END USER LEADS FMS'!A7:V10`,
+      range: `'${SHEETS.END_USER}'!T7:X8`, // Fetch headers for checking
     });
     res.json({
-      rawData: response.data.values,
-      message: "Row 7 = Headers, Row 8+ = Data",
-      columnMapping: {
-        "B (1)": "Unique ID",
-        "C (2)": "Customer Name",
-        "D (3)": "Customer Contact",
-        "E (4)": "Interested In",
-        "F (5)": "Project Selection",
-        "G (6)": "Lead Source",
-        "H (7)": "Lead Gen Number",
-        "I (8)": "Lead Gen Name",
-        "R (17)": "Planned (Field Visit)",
-        "S (18)": "Actual (Field Visit)",
-        "T (19)": "Status (Field Visit)",
-        "V (21)": "Remarks",
-      },
+      headers: response.data.values,
+      mappingCheck: "Col T should be Planned, U Actual, V Status, X Remarks"
     });
   } catch (error) {
-    res.json({ error: error.message });
+    res.json(error);
   }
 });
-// ============================================
-// Export Router
-// ============================================
+
 module.exports = router;

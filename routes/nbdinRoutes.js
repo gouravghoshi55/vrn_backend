@@ -9,36 +9,40 @@ const SHEETS = {
 
 async function getFilteredLeads(sheets, sheetName) {
   try {
-    // A8:P tak data fetch karo (Row 8 se start, Column A to P)
+    // UPDATED: Range increased to 'R' to cover FollowUp Count (Column R)
+    // A8:R tak data fetch karo (Row 8 se start, Column A to R)
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${sheetName}'!A8:P`,
+      range: `'${sheetName}'!A8:R`,
     });
     const rows = response.data.values || [];
     const filteredLeads = [];
     rows.forEach((row, index) => {
-      const status = row[14] ? row[14].trim() : ""; // Column M (Status)
-      const plannedDate = row[12] ? row[12].trim() : ""; // Column K (Planned)
-      const actualDate = row[13] ? row[13].trim() : ""; // Column L (Actual)
-      const followUpCount = row[16] ? row[16].trim() : "0"; // Column P (FollowUp Count)
+      // UPDATED COLUMN INDICES BASED ON SCREENSHOT
+      // A=0, B=1, ... M=12, N=13, O=14, R=17
+      
+      const status = row[14] ? row[14].trim() : ""; // Column O (Status) - New Index 14
+      const plannedDate = row[12] ? row[12].trim() : ""; // Column M (Planned) - New Index 12
+      const actualDate = row[13] ? row[13].trim() : ""; // Column N (Actual) - New Index 13
+      const followUpCount = row[17] ? row[17].trim() : "0"; // Column R (FollowUp Count) - New Index 17
 
       const statusLower = status.toLowerCase();
       if (status === "" || statusLower === "no conversation") {
         filteredLeads.push({
           rowIndex: index + 8, // Actual row number in sheet
           sheetName: sheetName,
-          uniqueId: row[1] || "", // Column B
-          customerName: row[2] || "", // Column C
-          customerContact: row[3] || "", // Column D
+          uniqueId: row[1] || "", // Column B (Unique ID)
+          customerName: row[2] || "", // Column C (Customer Name)
+          customerContact: row[3] || "", // Column D (Contact)
           interestedIn: row[4] || "", // Column E
           projectSelection: row[5] || "", // Column F
           leadSource: row[6] || "", // Column G
           leadGenNumber: row[7] || "", // Column H
           leadGenName: row[8] || "", // Column I
-          plannedDate: plannedDate, // Column K
-          actualDate: actualDate, // Column L
-          status: status || "Pending", // Column M
-          followUpCount: parseInt(followUpCount) || 0, // Column P
+          plannedDate: plannedDate, // Column M
+          actualDate: actualDate, // Column N
+          status: status || "Pending", // Column O
+          followUpCount: parseInt(followUpCount) || 0, // Column R
         });
       }
     });
@@ -60,15 +64,14 @@ function parseDate(dateStr) {
   }
   return new Date(dateStr);
 }
+
 function getCurrentTimestamp() {
   const dt = new Date().toLocaleString("en-IN", {
     timeZone: "Asia/Kolkata",
     hour12: false,
   });
-
   return dt.replace(",", "");
 }
-
 
 router.get("/nbdin", async (req, res) => {
   try {
@@ -113,6 +116,7 @@ router.post("/nbdin/update", async (req, res) => {
       currentFollowUpCount,
     } = req.body;
     console.log("📝 Updating NBDIN record:", { sheetName, rowIndex, status });
+    
     // Validation
     if (!sheetName || !rowIndex || !status) {
       return res.status(400).json({
@@ -120,43 +124,53 @@ router.post("/nbdin/update", async (req, res) => {
         error: "Missing required fields: sheetName, rowIndex, status",
       });
     }
+
     // Current timestamp for Actual column
     const timestamp = getCurrentTimestamp();
     const newFollowUpCount = (parseInt(currentFollowUpCount) || 0) + 1;
     const updates = [];
+
+    // --- UPDATED WRITING LOGIC BASED ON NEW COLUMNS ---
+
+    // 1. Update 'Planned' (Column M) with Next FollowUp Date
     if (nextFollowUpDate) {
       updates.push({
-        range: `'${sheetName}'!K${rowIndex}`,
+        range: `'${sheetName}'!M${rowIndex}`, // Changed from K to M
         values: [[nextFollowUpDate]],
       });
     }
 
+    // 2. Update 'Actual' (Column N) with Timestamp
     updates.push({
-      range: `'${sheetName}'!L${rowIndex}`,
+      range: `'${sheetName}'!N${rowIndex}`, // Changed from L to N
       values: [[timestamp]],
     });
 
+    // 3. Update 'Status' (Column O)
     updates.push({
-      range: `'${sheetName}'!M${rowIndex}`,
+      range: `'${sheetName}'!O${rowIndex}`, // Changed from M to O
       values: [[status]],
     });
 
+    // 4. Update 'Field Visit Schedule date' (Column P)
     if (fieldVisitDate) {
       updates.push({
-        range: `'${sheetName}'!N${rowIndex}`,
+        range: `'${sheetName}'!P${rowIndex}`, // Changed from N to P
         values: [[fieldVisitDate]],
       });
     }
 
+    // 5. Update 'Next FollowUP Date' (Column Q)
     if (nextFollowUpDate) {
       updates.push({
-        range: `'${sheetName}'!O${rowIndex}`,
+        range: `'${sheetName}'!Q${rowIndex}`, // Changed from O to Q
         values: [[nextFollowUpDate]],
       });
     }
 
+    // 6. Update 'FollowUP Count' (Column R)
     updates.push({
-      range: `'${sheetName}'!P${rowIndex}`,
+      range: `'${sheetName}'!R${rowIndex}`, // Changed from P to R
       values: [[newFollowUpCount.toString()]],
     });
 
@@ -167,12 +181,14 @@ router.post("/nbdin/update", async (req, res) => {
         data: updates,
       },
     });
+
     console.log(`✅ Updated row ${rowIndex} in ${sheetName}`);
     console.log(`   Status: ${status}`);
     console.log(`   Field Visit Date: ${fieldVisitDate || "N/A"}`);
     console.log(`   Next FollowUp Date: ${nextFollowUpDate || "N/A"}`);
     console.log(`   Actual Timestamp: ${timestamp}`);
     console.log(`   FollowUp Count: ${newFollowUpCount}`);
+    
     res.json({
       success: true,
       message: "Lead updated successfully",

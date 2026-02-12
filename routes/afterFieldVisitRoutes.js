@@ -69,18 +69,21 @@ async function getFilteredLeads(sheets, sheetName) {
   const filtered = [];
 
   rows.forEach((row, index) => {
-    // UPDATED INDICES BASED ON SCREENSHOT
-    // Z=25, AA=26, AB=27, AE=30, AF=31
-    const plannedDate = row[25] ? row[25].trim() : "";   // Col Z
-    const actualDate = row[26] ? row[26].trim() : "";    // Col AA
-    const status = row[27] ? row[27].trim() : "";        // Col AB
-    const followUpCount = row[30] ? row[30].trim() : "0";// Col AE
-    const remarks = row[31] ? row[31].trim() : "";       // Col AF
+    // COLUMN MAPPING BASED ON STEP 4 SCREENSHOT
+    // Z=25 (Planned), AA=26 (Actual), AB=27 (Status)
+    // AE=30 (FollowUp Count), AF=31 (Remarks)
+    
+    const plannedDate = row[25] ? row[25].trim() : "";   // Column Z
+    const actualDate = row[26] ? row[26].trim() : "";    // Column AA
+    const status = row[27] ? row[27].trim() : "";        // Column AB
+    const followUpCount = row[30] ? row[30].trim() : "0";// Column AE
+    const remarks = row[31] ? row[31].trim() : "";       // Column AF
 
-    const statusLower = status.toLowerCase();
-
-    // Condition: Planned exists AND (Actual is empty OR Status is 'no conversation' OR Status is 'pending')
-    if (plannedDate && (!actualDate || statusLower === "no conversation" || status === "")) {
+    // ============================================================
+    // UPDATED CONDITION:
+    // Show row ONLY IF: Planned is NOT Empty AND Actual IS Empty
+    // ============================================================
+    if (plannedDate && !actualDate) {
       filtered.push({
         rowIndex: index + 8,
         sheetName,
@@ -161,24 +164,13 @@ router.post("/update", async (req, res) => {
     const timestamp = getCurrentTimestamp();
     const updates = [];
 
-    /*
-      NEW MAPPING:
-      Z (25)  = Planned
-      AA (26) = Actual
-      AB (27) = Status
-      AC (28) = Deal Meeting Date
-      AD (29) = Next FollowUp Date
-      AE (30) = FollowUp Count
-      AF (31) = Remarks
-    */
-
     // ----------------------------
     // CASE 1: NO CONVERSATION (Loop Back)
     // ----------------------------
     if (normalizedStatus === "no conversation") {
       const newCount = (parseInt(currentFollowUpCount) || 0) + 1;
       
-      // 1. Update Planned (Col Z) with Next Date + Time
+      // 1. Update Planned (Col Z) -> New Date
       if (nextFollowUpDate) {
         const plannedDateTime = getPlannedDateTime(nextFollowUpDate);
         updates.push({
@@ -187,7 +179,7 @@ router.post("/update", async (req, res) => {
         });
       }
 
-      // 2. Update Actual (Col AA)
+      // 2. Update Actual (Col AA) -> Timestamp
       updates.push({
         range: `'${sheetName}'!AA${rowIndex}`,
         values: [[timestamp]],
@@ -199,7 +191,7 @@ router.post("/update", async (req, res) => {
         values: [["No conversation"]],
       });
 
-      // 4. Update Next FollowUp Date (Col AD) - Just Date
+      // 4. Update Next FollowUp Date (Col AD)
       if (nextFollowUpDate) {
         updates.push({
           range: `'${sheetName}'!AD${rowIndex}`,
@@ -223,7 +215,7 @@ router.post("/update", async (req, res) => {
     }
 
     // ----------------------------
-    // CASE 2: DONE (Schedule Meeting / Closed)
+    // CASE 2: DONE
     // ----------------------------
     else if (normalizedStatus === "done") {
       // 1. Update Actual (Col AA)
@@ -256,7 +248,7 @@ router.post("/update", async (req, res) => {
     }
 
     // ----------------------------
-    // CASE 3: NOT INTERESTED / OTHERS
+    // CASE 3: OTHERS (Not Interested etc.)
     // ----------------------------
     else {
       // 1. Update Actual (Col AA)
@@ -287,8 +279,6 @@ router.post("/update", async (req, res) => {
         data: updates,
       },
     });
-
-    console.log(`✅ Step 4 Updated: Row ${rowIndex}, Status: ${status}`);
 
     res.json({
       success: true,

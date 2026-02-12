@@ -42,7 +42,7 @@ function getPlannedDateTime(dateStr) {
 
 async function getFilteredLeads(sheets, sheetName) {
   try {
-    // UPDATED: Range increased to 'S' to include Remarks
+    // Range A8:S tak (S = Latest Remarks)
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `'${sheetName}'!A8:S`, 
@@ -50,14 +50,32 @@ async function getFilteredLeads(sheets, sheetName) {
     const rows = response.data.values || [];
     const filteredLeads = [];
     rows.forEach((row, index) => {
-      // Column Indices (Based on +2 shift):
-      // M(12), N(13), O(14), P(15), Q(16), R(17), S(18)
       
-      const status = row[14] ? row[14].trim() : "";       // Col O
-      const plannedDate = row[12] ? row[12].trim() : "";  // Col M
-      const actualDate = row[13] ? row[13].trim() : "";   // Col N
-      const followUpCount = row[17] ? row[17].trim() : "0"; // Col R
-      const remarks = row[18] ? row[18].trim() : "";      // Col S (NEW)
+      // --- COLUMN INDICES ---
+      // L = 11 (Remark of Qualification - Initial)
+      // M = 12, N = 13, O = 14
+      // R = 17 (FollowUp Count)
+      // S = 18 (Latest Remarks - Updated)
+
+      const status = row[14] ? row[14].trim() : "";         // Col O
+      const plannedDate = row[12] ? row[12].trim() : "";    // Col M
+      const actualDate = row[13] ? row[13].trim() : "";     // Col N
+      const followUpCountStr = row[17] ? row[17].trim() : "0"; // Col R
+      
+      const remarkL = row[11] ? row[11].trim() : "";        // Col L (Initial)
+      const remarkS = row[18] ? row[18].trim() : "";        // Col S (Latest)
+
+      // --- CONDITIONAL REMARKS LOGIC ---
+      const countVal = parseInt(followUpCountStr) || 0;
+      let finalRemarkToDisplay = "";
+
+      if (countVal === 0) {
+        // Agar count 0 hai, toh Column L dikhao
+        finalRemarkToDisplay = remarkL;
+      } else {
+        // Agar count > 0 hai, toh Column S dikhao
+        finalRemarkToDisplay = remarkS;
+      }
 
       const statusLower = status.toLowerCase();
       if (status === "" || statusLower === "no conversation") {
@@ -75,8 +93,8 @@ async function getFilteredLeads(sheets, sheetName) {
           plannedDate: plannedDate,
           actualDate: actualDate,
           status: status || "Pending",
-          followUpCount: parseInt(followUpCount) || 0,
-          remarks: remarks, // NEW FIELD
+          followUpCount: countVal,
+          remarks: finalRemarkToDisplay, // Yahan conditional remark jayega
         });
       }
     });
@@ -122,7 +140,7 @@ router.post("/nbdin/update", async (req, res) => {
       fieldVisitDate,
       nextFollowUpDate,
       currentFollowUpCount,
-      remarks, // NEW: Accepting remarks from frontend
+      remarks, 
     } = req.body;
 
     console.log("📝 Updating NBDIN record:", { sheetName, rowIndex, status, remarks });
@@ -142,7 +160,7 @@ router.post("/nbdin/update", async (req, res) => {
     const newFollowUpCount = (parseInt(currentFollowUpCount) || 0) + 1;
     const updates = [];
 
-    // --- COLUMN MAPPINGS ---
+    // --- WRITING LOGIC (Always write to Column S for new remarks) ---
 
     // 1. Planned (Col M)
     let finalPlannedValue = "";
@@ -188,8 +206,8 @@ router.post("/nbdin/update", async (req, res) => {
       values: [[newFollowUpCount.toString()]],
     });
 
-    // 7. REMARKS (Col S) - NEW ADDITION
-    if (remarks !== undefined) { // Check undefined taaki empty string bhi update ho sake agar user clear karna chahe
+    // 7. REMARKS (Always update Col S)
+    if (remarks !== undefined) { 
       updates.push({
         range: `'${sheetName}'!S${rowIndex}`,
         values: [[remarks]],
@@ -204,7 +222,7 @@ router.post("/nbdin/update", async (req, res) => {
       },
     });
 
-    console.log(`✅ Updated row ${rowIndex} including Remarks in Col S`);
+    console.log(`✅ Updated row ${rowIndex}. Count: ${newFollowUpCount}. Remarks logic handled.`);
 
     res.json({
       success: true,

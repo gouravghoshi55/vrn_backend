@@ -17,10 +17,10 @@ async function getFilteredLeads(sheets, sheetName) {
     const rows = response.data.values || [];
     const filteredLeads = [];
     rows.forEach((row, index) => {
-      const status = row[12] ? row[12].trim() : ""; // Column M (Status)
-      const plannedDate = row[10] ? row[10].trim() : ""; // Column K (Planned)
-      const actualDate = row[11] ? row[11].trim() : ""; // Column L (Actual)
-      const followUpCount = row[15] ? row[15].trim() : "0"; // Column P (FollowUp Count)
+      const status = row[14] ? row[14].trim() : ""; // Column M (Status)
+      const plannedDate = row[12] ? row[12].trim() : ""; // Column K (Planned)
+      const actualDate = row[13] ? row[13].trim() : ""; // Column L (Actual)
+      const followUpCount = row[16] ? row[16].trim() : "0"; // Column P (FollowUp Count)
 
       const statusLower = status.toLowerCase();
       if (status === "" || statusLower === "no conversation") {

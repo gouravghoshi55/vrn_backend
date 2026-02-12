@@ -63,7 +63,7 @@ async function getFilteredLeads(sheets, sheetName) {
       const followUpCountStr = row[17] ? row[17].trim() : "0"; // Col R
       
       const remarkL = row[11] ? row[11].trim() : "";        // Col L (Initial)
-      const remarkS = row[18] ? row[18].trim() : "";        // Col S (Latest)
+      const remarkS = row[19] ? row[19].trim() : "";        // Col T (Latest)
 
       // --- CONDITIONAL REMARKS LOGIC ---
       const countVal = parseInt(followUpCountStr) || 0;

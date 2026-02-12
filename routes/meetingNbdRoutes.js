@@ -23,7 +23,7 @@ function getCurrentTimestamp() {
   return `${d}/${m}/${y} ${h}:${mi}:${s}`;
 }
 
-// Helper: Merges User Selected Date with Current Time for 'Planned' column (Reschedule ke liye)
+// Helper: Reschedule ke liye Date+Time merge karna
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
   const now = new Date();
@@ -34,7 +34,7 @@ function getPlannedDateTime(dateStr) {
 
   let formattedDate = dateStr;
   if (dateStr.includes("-")) {
-    const parts = dateStr.split("-"); // Expecting YYYY-MM-DD
+    const parts = dateStr.split("-"); 
     if (parts[0].length === 4) {
       formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
@@ -59,7 +59,7 @@ function parseDate(dateStr) {
 // ============================================
 
 async function getFilteredLeads(sheets, sheetName) {
-  // Fetch up to Column AJ (Remarks)
+  // AJ tak data fetch karenge (AJ = Index 35)
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: `'${sheetName}'!A8:AJ`,
@@ -69,17 +69,21 @@ async function getFilteredLeads(sheets, sheetName) {
   const filtered = [];
 
   rows.forEach((row, index) => {
-    // UPDATED INDICES BASED ON SCREENSHOT (Step 5)
-    // AF=31 (Planned), AG=32 (Actual), AH=33 (Status), AJ=35 (Remarks)
-    
+    // --- COLUMN MAPPING (Based on Screenshot Step 5) ---
+    // AE = 30 (Previous/Followup Remarks) -> READ THIS
+    // AF = 31 (Planned)
+    // AG = 32 (Actual)
+    // AH = 33 (Status)
+    // AJ = 35 (Current Meeting Remarks) -> WRITE HERE
+
     const plannedDate = row[31] ? row[31].trim() : "";   // Column AF
     const actualDate = row[32] ? row[32].trim() : "";    // Column AG
     const status = row[33] ? row[33].trim() : "";        // Column AH
-    const remarks = row[35] ? row[35].trim() : "";       // Column AJ
+    
+    // CHANGE: Hamein AE (30) padhna hai list dikhane ke liye
+    const previousRemarks = row[30] ? row[30].trim() : ""; 
 
-    // ============================================================
-    // CONDITION: Show row ONLY IF: Planned is NOT Empty AND Actual IS Empty
-    // ============================================================
+    // Filter: Show only if Planned exists AND Actual is empty
     if (plannedDate && !actualDate) {
       filtered.push({
         rowIndex: index + 8,
@@ -89,12 +93,9 @@ async function getFilteredLeads(sheets, sheetName) {
         customerContact: row[3] || "",
         interestedIn: row[4] || "",
         projectSelection: row[5] || "",
-        leadSource: row[6] || "",
-        leadGenNumber: row[7] || "",
-        leadGenName: row[8] || "",
         plannedDate,
         status: status || "Pending",
-        remarks: remarks,
+        remarks: previousRemarks, // Frontend ko Column AE bhej rahe hain
       });
     }
   });
@@ -106,9 +107,6 @@ async function getFilteredLeads(sheets, sheetName) {
 // ROUTES
 // ============================================
 
-/**
- * GET /api/meeting-nbd/list
- */
 router.get("/list", async (req, res) => {
   try {
     const [endUser, channelPartner] = await Promise.all([
@@ -118,7 +116,6 @@ router.get("/list", async (req, res) => {
 
     const all = [...endUser, ...channelPartner];
 
-    // Sort by Planned Date
     all.sort((a, b) => {
       const da = parseDate(a.plannedDate);
       const db = parseDate(b.plannedDate);
@@ -131,7 +128,7 @@ router.get("/list", async (req, res) => {
       total: all.length,
     });
   } catch (err) {
-    console.error("Error fetching Meeting NBD data:", err);
+    console.error("Error fetching Step 5 data:", err);
     res.status(500).json({
       success: false,
       error: err.message,
@@ -143,20 +140,13 @@ router.get("/list", async (req, res) => {
 // UPDATE (POST)
 // ============================================
 
-/**
- * POST /api/meeting-nbd/update
- * 
- * Supports:
- * 1. Reschedule: Updates Planned (AF) with new Date + Time.
- * 2. Done/Status Update: Updates Actual (AG) with Timestamp and Status (AH).
- */
 router.post("/update", async (req, res) => {
   try {
     const {
       sheetName,
       rowIndex,
       status,
-      rescheduleDate, // Only required if Rescheduling
+      rescheduleDate,
       remarks,
     } = req.body;
 
@@ -170,52 +160,40 @@ router.post("/update", async (req, res) => {
     const timestamp = getCurrentTimestamp();
     const updates = [];
 
-    // --- MAPPING (Step 5) ---
-    // AF (31) = Planned
-    // AG (32) = Actual
-    // AH (33) = Status
-    // AJ (35) = Remarks
-
-    // ----------------------------
-    // SCENARIO 1: RESCHEDULE
-    // ----------------------------
+    // --- SCENARIO 1: RESCHEDULE ---
     if (rescheduleDate) {
       const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
       
-      // Update Planned (Col AF) - Overwrite with new date
+      // Update Planned (Col AF)
       updates.push({
         range: `'${sheetName}'!AF${rowIndex}`,
         values: [[newPlannedDateTime]],
       });
-
-      // (Optional) Update Status to 'Reschedule' or keep it pending
-      // Hum Status (AH) bhi update kar sakte hain taaki pata chale
+      
+      // Status Update (Optional, keeping consistent)
       updates.push({
         range: `'${sheetName}'!AH${rowIndex}`,
         values: [["Rescheduled"]], 
       });
 
     } 
-    // ----------------------------
-    // SCENARIO 2: DONE / NEGOTIATION FAILED / ETC
-    // ----------------------------
+    // --- SCENARIO 2: DONE / FAILED ---
     else {
-      // 1. Update Actual (Col AG) -> Timestamp
+      // Update Actual (Col AG)
       updates.push({
         range: `'${sheetName}'!AG${rowIndex}`,
         values: [[timestamp]],
       });
 
-      // 2. Update Status (Col AH)
+      // Update Status (Col AH)
       updates.push({
         range: `'${sheetName}'!AH${rowIndex}`,
         values: [[status]],
       });
     }
 
-    // ----------------------------
-    // COMMON: UPDATE REMARKS (Col AJ)
-    // ----------------------------
+    // --- COMMON: UPDATE REMARKS (Col AJ) ---
+    // Naya remark hamesha Column AJ mein jayega
     if (remarks !== undefined) {
       updates.push({
         range: `'${sheetName}'!AJ${rowIndex}`,
@@ -231,15 +209,13 @@ router.post("/update", async (req, res) => {
       },
     });
 
-    console.log(`✅ Meeting NBD Updated: Row ${rowIndex}, Rescheduled: ${!!rescheduleDate}`);
-
     res.json({
       success: true,
-      message: rescheduleDate ? "Meeting Rescheduled Successfully" : "Meeting Status Updated Successfully",
+      message: rescheduleDate ? "Rescheduled Successfully" : "Status Updated Successfully",
     });
 
   } catch (err) {
-    console.error("❌ Error updating Meeting NBD:", err);
+    console.error("❌ Error updating Step 5:", err);
     res.status(500).json({
       success: false,
       error: err.message,

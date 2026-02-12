@@ -125,6 +125,33 @@ router.get("/nbdin", async (req, res) => {
 
 
 // --- UPDATED POST ROUTE ---
+// ... Upar ka code same rahega ...
+
+// Helper function to get Date + Current Time manually
+function getPlannedDateTime(dateStr) {
+  if (!dateStr) return "";
+
+  // 1. Get Current Time
+  const now = new Date();
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+  const timePart = `${hours}:${minutes}:${seconds}`;
+
+  // 2. Handle Date Part (Input usually YYYY-MM-DD from frontend)
+  // Agar input 2026-02-10 hai, toh hum usse 10/02/2026 banayenge
+  let formattedDate = dateStr;
+  if (dateStr.includes("-")) {
+    const parts = dateStr.split("-"); // [2026, 02, 10]
+    if (parts[0].length === 4) {
+      formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`; // 10/02/2026
+    }
+  }
+
+  // 3. Combine
+  return `${formattedDate} ${timePart}`;
+}
+
 router.post("/nbdin/update", async (req, res) => {
   try {
     const {
@@ -132,7 +159,7 @@ router.post("/nbdin/update", async (req, res) => {
       rowIndex,
       status,
       fieldVisitDate,
-      nextFollowUpDate, // Input Format: YYYY-MM-DD
+      nextFollowUpDate, // Frontend se bas Date aani chahiye (YYYY-MM-DD)
       currentFollowUpCount,
     } = req.body;
 
@@ -145,62 +172,65 @@ router.post("/nbdin/update", async (req, res) => {
       });
     }
 
-    const timestamp = getCurrentTimestamp(); // Current Date + Time
+    // Actual Timestamp for Column N
+    const timestamp = new Date().toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour12: false,
+    }).replace(",", "");
+
     const newFollowUpCount = (parseInt(currentFollowUpCount) || 0) + 1;
     const updates = [];
 
-    // --- LOGIC FOR COLUMNS (Based on Screenshot +2 Shift) ---
-    // Old Planned (K) -> New Planned (M)
-    // Old Actual (L)  -> New Actual (N)
-    // Old Status (M)  -> New Status (O)
-    // Old Field (N)   -> New Field (P)
-    // Old Next (O)    -> New Next (Q)
-    // Old Count (P)   -> New Count (R)
-
-    // 1. Column M: Planned (Next FollowUp Date + Current Time)
+    // --- COLUMN MAPPING FIX ---
+    
+    // 1. Planned (Column M): Next Followup Date + Current Time
+    let finalPlannedValue = "";
     if (nextFollowUpDate) {
-      const plannedDateTime = formatPlannedDateWithTime(nextFollowUpDate);
+      finalPlannedValue = getPlannedDateTime(nextFollowUpDate);
+      
+      // DEBUG LOG: Check karo console mein kya print ho raha hai
+      console.log("🕒 Generated Planned Date-Time:", finalPlannedValue); 
+      
       updates.push({
-        range: `'${sheetName}'!M${rowIndex}`, 
-        values: [[plannedDateTime]], // Example: "15/02/2026 15:52:33"
+        range: `'${sheetName}'!M${rowIndex}`,
+        values: [[finalPlannedValue]], 
       });
     }
 
-    // 2. Column N: Actual (Current Timestamp)
+    // 2. Actual (Column N)
     updates.push({
-      range: `'${sheetName}'!N${rowIndex}`, 
-      values: [[timestamp]], 
+      range: `'${sheetName}'!N${rowIndex}`,
+      values: [[timestamp]],
     });
 
-    // 3. Column O: Status
+    // 3. Status (Column O)
     updates.push({
-      range: `'${sheetName}'!O${rowIndex}`, 
-      values: [[status]], 
+      range: `'${sheetName}'!O${rowIndex}`,
+      values: [[status]],
     });
 
-    // 4. Column P: Field Visit Schedule Date
+    // 4. Field Visit (Column P)
     if (fieldVisitDate) {
       updates.push({
-        range: `'${sheetName}'!P${rowIndex}`, 
-        values: [[fieldVisitDate]], 
+        range: `'${sheetName}'!P${rowIndex}`,
+        values: [[fieldVisitDate]],
       });
     }
 
-    // 5. Column Q: Next FollowUp Date (Only Date usually)
+    // 5. Next FollowUp Date (Column Q)
     if (nextFollowUpDate) {
       updates.push({
-        range: `'${sheetName}'!Q${rowIndex}`, 
-        values: [[nextFollowUpDate]], 
+        range: `'${sheetName}'!Q${rowIndex}`,
+        values: [[nextFollowUpDate]],
       });
     }
 
-    // 6. Column R: FollowUP Count
+    // 6. FollowUp Count (Column R)
     updates.push({
-      range: `'${sheetName}'!R${rowIndex}`, 
-      values: [[newFollowUpCount.toString()]], 
+      range: `'${sheetName}'!R${rowIndex}`,
+      values: [[newFollowUpCount.toString()]],
     });
 
-    // Execute Batch Update
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
@@ -209,8 +239,8 @@ router.post("/nbdin/update", async (req, res) => {
       },
     });
 
-    console.log(`✅ Updated row ${rowIndex}. Planned (Col M) set to Date+Time.`);
-    
+    console.log(`✅ Updated row ${rowIndex}. Planned set to: ${finalPlannedValue}`);
+
     res.json({
       success: true,
       message: "Lead updated successfully",
@@ -218,11 +248,9 @@ router.post("/nbdin/update", async (req, res) => {
         sheetName,
         rowIndex,
         status,
-        actualTimestamp: timestamp,
-        followUpCount: newFollowUpCount,
+        plannedDateTime: finalPlannedValue,
       },
     });
-
   } catch (error) {
     console.error("❌ Error updating NBD IN lead:", error.message);
     res.status(500).json({
@@ -232,5 +260,7 @@ router.post("/nbdin/update", async (req, res) => {
     });
   }
 });
+
+module.exports = router;
 
 module.exports = router;

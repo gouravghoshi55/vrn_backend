@@ -63,10 +63,10 @@ async function getFilteredLeads(sheets, sheetName) {
       // A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, I=8
       // R=17 (Planned), S=18 (Actual), T=19 (Status), V=21 (Remarks)
       
-      const plannedDate = row[19] ? row[19].trim() : "";  // Column R (Planned)
-      const actualDate = row[20] ? row[20].trim() : "";   // Column S (Actual)
-      const status = row[21] ? row[21].trim() : "";       // Column T (Status)
-      const remarks = row[23] ? row[23].trim() : "";      // Column V (Remarks)
+      const plannedDate = row[20] ? row[20].trim() : "";  // Column R (Planned)
+      const actualDate = row[21] ? row[21].trim() : "";   // Column S (Actual)
+      const status = row[22] ? row[22].trim() : "";       // Column T (Status)
+      const remarks = row[24] ? row[24].trim() : "";      // Column V (Remarks)
       // CONDITION: Planned (R) NOT NULL AND Actual (S) NULL
       if (plannedDate && !actualDate) {
         filteredLeads.push({

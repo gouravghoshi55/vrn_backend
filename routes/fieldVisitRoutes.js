@@ -20,7 +20,6 @@ function getCurrentTimestamp() {
   return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 
-// Reschedule ke liye Date + Time formatter
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
   const now = new Date();
@@ -31,7 +30,7 @@ function getPlannedDateTime(dateStr) {
 
   let formattedDate = dateStr;
   if (dateStr.includes("-")) {
-    const parts = dateStr.split("-"); // Expecting YYYY-MM-DD
+    const parts = dateStr.split("-");
     if (parts[0].length === 4) {
       formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
@@ -54,18 +53,26 @@ async function getFilteredLeads(sheets, sheetName) {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${sheetName}'!A8:X`,
+      range: `'${sheetName}'!A8:X`, // Range A se X tak hai, to S (Col 19) isme aa jayega
     });
     
     const rows = response.data.values || [];
     const filteredLeads = [];
     
     rows.forEach((row, index) => {
-      // T=19(Planned), U=20(Actual), V=21(Status), X=23(Remarks)
+      // Column Mapping (Based on 0-index):
+      // S = 18 (Previous/Telecalling Remarks) <-- Yahan se padhna hai
+      // T = 19 (Planned)
+      // U = 20 (Actual)
+      // V = 21 (Status)
+      // X = 23 (Field Visit Remarks) <-- Yahan write karna hai
+
       const plannedDate = row[19] ? row[19].trim() : "";
       const actualDate = row[20] ? row[20].trim() : "";
       const status = row[21] ? row[21].trim() : "";
-      const remarks = row[23] ? row[23].trim() : "";
+      
+      // CHANGE: Pehle row[23] (X) padh rahe the, ab row[18] (S) padhenge display ke liye
+      const remarks = row[18] ? row[18].trim() : ""; 
 
       // List mein tabhi dikhega jab Planned ho aur Actual khali ho
       if (plannedDate && !actualDate) {
@@ -82,7 +89,7 @@ async function getFilteredLeads(sheets, sheetName) {
           leadGenName: row[8] || "",
           plannedDate: plannedDate,
           status: status || "Pending",
-          remarks: remarks,
+          remarks: remarks, // Ye ab Column S ka data frontend bhejeaga
         });
       }
     });
@@ -124,16 +131,15 @@ router.post("/update", async (req, res) => {
 
     const updates = [];
 
-    // SCENARIO 1: RESCHEDULE (Update Planned - Col T)
+    // SCENARIO 1: RESCHEDULE
     if (rescheduleDate) {
       const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
       updates.push({
-        range: `'${sheetName}'!T${rowIndex}`, // Overwrite Planned
+        range: `'${sheetName}'!T${rowIndex}`, // Update Planned
         values: [[newPlannedDateTime]],
       });
-      // Reschedule mein hum Status/Actual update nahi karte taaki wo list mein bana rahe
     } 
-    // SCENARIO 2: MARK AS DONE (Update Actual - Col U, Status - Col V)
+    // SCENARIO 2: MARK AS DONE
     else {
       const timestamp = getCurrentTimestamp();
       updates.push({
@@ -146,10 +152,11 @@ router.post("/update", async (req, res) => {
       });
     }
 
-    // UPDATE REMARKS (Always update Col X)
+    // UPDATE REMARKS (Always update Col X - Visit Remarks)
+    // Ye code ensure karta hai ki naya remark 'S' ko overwrite na kare, balki 'X' me jaye
     if (remarks !== undefined) {
       updates.push({
-        range: `'${sheetName}'!X${rowIndex}`,
+        range: `'${sheetName}'!X${rowIndex}`, 
         values: [[remarks]],
       });
     }

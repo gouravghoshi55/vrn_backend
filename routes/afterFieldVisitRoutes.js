@@ -8,16 +8,6 @@ const SHEETS = {
   CHANNEL_PARTNER: "Channel Partener Lead FMS",
 };
 
-/*
-W (22) = Planned
-X (23) = Actual
-Y (24) = Status
-Z (25) = Deal Meeting Date
-AA (26) = Next FollowUp Date
-AB (27) = FollowUp Count
-AC (28) = Remarks
-*/
-
 // ============================================
 // Helpers
 // ============================================
@@ -33,6 +23,25 @@ function getCurrentTimestamp() {
   return `${d}/${m}/${y} ${h}:${mi}:${s}`;
 }
 
+// Helper: Merges User Selected Date with Current Time for 'Planned' column
+function getPlannedDateTime(dateStr) {
+  if (!dateStr) return "";
+  const now = new Date();
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+  const timePart = `${hours}:${minutes}:${seconds}`;
+
+  let formattedDate = dateStr;
+  if (dateStr.includes("-")) {
+    const parts = dateStr.split("-"); // Expecting YYYY-MM-DD
+    if (parts[0].length === 4) {
+      formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+  }
+  return `${formattedDate} ${timePart}`;
+}
+
 function parseDate(dateStr) {
   if (!dateStr) return new Date(0);
   const parts = dateStr.split(/[\/\-]/);
@@ -46,29 +55,32 @@ function parseDate(dateStr) {
 }
 
 // ============================================
-// FETCH LIST
+// FETCH LIST (GET)
 // ============================================
 
 async function getFilteredLeads(sheets, sheetName) {
+  // Fetch up to Column AF (Remarks)
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${sheetName}'!A8:AC`,
+    range: `'${sheetName}'!A8:AF`,
   });
 
   const rows = response.data.values || [];
   const filtered = [];
 
   rows.forEach((row, index) => {
-    const plannedDate = row[22] ? row[22].trim() : "";
-    const actualDate = row[23] ? row[23].trim() : "";
-    const status = row[24] ? row[24].trim() : "";
-    const followUpCount = row[27] ? row[27].trim() : "0";
+    // UPDATED INDICES BASED ON SCREENSHOT
+    // Z=25, AA=26, AB=27, AE=30, AF=31
+    const plannedDate = row[25] ? row[25].trim() : "";   // Col Z
+    const actualDate = row[26] ? row[26].trim() : "";    // Col AA
+    const status = row[27] ? row[27].trim() : "";        // Col AB
+    const followUpCount = row[30] ? row[30].trim() : "0";// Col AE
+    const remarks = row[31] ? row[31].trim() : "";       // Col AF
 
     const statusLower = status.toLowerCase();
 
-    // ✅ Planned exists AND
-    // Actual empty OR status is no conversation
-    if (plannedDate && (!actualDate || statusLower === "no conversation")) {
+    // Condition: Planned exists AND (Actual is empty OR Status is 'no conversation' OR Status is 'pending')
+    if (plannedDate && (!actualDate || statusLower === "no conversation" || status === "")) {
       filtered.push({
         rowIndex: index + 8,
         sheetName,
@@ -78,10 +90,10 @@ async function getFilteredLeads(sheets, sheetName) {
         interestedIn: row[4] || "",
         projectSelection: row[5] || "",
         leadSource: row[6] || "",
-        leadGenNumber: row[7] || "",
-        leadGenName: row[8] || "",
         plannedDate,
+        status: status || "Pending",
         followUpCount: parseInt(followUpCount) || 0,
+        remarks: remarks,
       });
     }
   });
@@ -114,6 +126,7 @@ router.get("/list", async (req, res) => {
       total: all.length,
     });
   } catch (err) {
+    console.error("Error fetching Step 4 data:", err);
     res.status(500).json({
       success: false,
       error: err.message,
@@ -122,7 +135,7 @@ router.get("/list", async (req, res) => {
 });
 
 // ============================================
-// UPDATE
+// UPDATE (POST)
 // ============================================
 
 router.post("/update", async (req, res) => {
@@ -148,95 +161,120 @@ router.post("/update", async (req, res) => {
     const timestamp = getCurrentTimestamp();
     const updates = [];
 
+    /*
+      NEW MAPPING:
+      Z (25)  = Planned
+      AA (26) = Actual
+      AB (27) = Status
+      AC (28) = Deal Meeting Date
+      AD (29) = Next FollowUp Date
+      AE (30) = FollowUp Count
+      AF (31) = Remarks
+    */
+
     // ----------------------------
-    // NO CONVERSATION
+    // CASE 1: NO CONVERSATION (Loop Back)
     // ----------------------------
     if (normalizedStatus === "no conversation") {
       const newCount = (parseInt(currentFollowUpCount) || 0) + 1;
-
+      
+      // 1. Update Planned (Col Z) with Next Date + Time
       if (nextFollowUpDate) {
+        const plannedDateTime = getPlannedDateTime(nextFollowUpDate);
         updates.push({
-          range: `'${sheetName}'!W${rowIndex}`,
-          values: [[nextFollowUpDate]],
+          range: `'${sheetName}'!Z${rowIndex}`,
+          values: [[plannedDateTime]],
         });
       }
 
+      // 2. Update Actual (Col AA)
       updates.push({
-        range: `'${sheetName}'!X${rowIndex}`,
+        range: `'${sheetName}'!AA${rowIndex}`,
         values: [[timestamp]],
       });
 
+      // 3. Update Status (Col AB)
       updates.push({
-        range: `'${sheetName}'!Y${rowIndex}`,
-        values: [["No Conversation"]],
+        range: `'${sheetName}'!AB${rowIndex}`,
+        values: [["No conversation"]],
       });
 
+      // 4. Update Next FollowUp Date (Col AD) - Just Date
       if (nextFollowUpDate) {
         updates.push({
-          range: `'${sheetName}'!AA${rowIndex}`,
+          range: `'${sheetName}'!AD${rowIndex}`,
           values: [[nextFollowUpDate]],
         });
       }
 
+      // 5. Update FollowUp Count (Col AE)
       updates.push({
-        range: `'${sheetName}'!AB${rowIndex}`,
+        range: `'${sheetName}'!AE${rowIndex}`,
         values: [[newCount.toString()]],
       });
 
+      // 6. Update Remarks (Col AF)
       if (remarks) {
         updates.push({
-          range: `'${sheetName}'!AC${rowIndex}`,
+          range: `'${sheetName}'!AF${rowIndex}`,
           values: [[remarks]],
         });
       }
     }
 
     // ----------------------------
-    // DONE
+    // CASE 2: DONE (Schedule Meeting / Closed)
     // ----------------------------
     else if (normalizedStatus === "done") {
+      // 1. Update Actual (Col AA)
       updates.push({
-        range: `'${sheetName}'!X${rowIndex}`,
+        range: `'${sheetName}'!AA${rowIndex}`,
         values: [[timestamp]],
       });
 
+      // 2. Update Status (Col AB)
       updates.push({
-        range: `'${sheetName}'!Y${rowIndex}`,
+        range: `'${sheetName}'!AB${rowIndex}`,
         values: [["Done"]],
       });
 
+      // 3. Update Deal Meeting Date (Col AC)
       if (dealMeetingDate) {
         updates.push({
-          range: `'${sheetName}'!Z${rowIndex}`,
+          range: `'${sheetName}'!AC${rowIndex}`,
           values: [[dealMeetingDate]],
         });
       }
 
+      // 4. Update Remarks (Col AF)
       if (remarks) {
         updates.push({
-          range: `'${sheetName}'!AC${rowIndex}`,
+          range: `'${sheetName}'!AF${rowIndex}`,
           values: [[remarks]],
         });
       }
     }
 
     // ----------------------------
-    // NOT INTERESTED
+    // CASE 3: NOT INTERESTED / OTHERS
     // ----------------------------
-    else if (normalizedStatus === "not interested") {
+    else {
+      // 1. Update Actual (Col AA)
       updates.push({
-        range: `'${sheetName}'!X${rowIndex}`,
+        range: `'${sheetName}'!AA${rowIndex}`,
         values: [[timestamp]],
       });
 
+      // 2. Update Status (Col AB)
       updates.push({
-        range: `'${sheetName}'!Y${rowIndex}`,
-        values: [["Not Interested"]],
+        range: `'${sheetName}'!AB${rowIndex}`,
+        values: [[status]],
       });
 
+      // 3. Update Remarks (Col AF)
       if (remarks) {
         updates.push({
-          range: `'${sheetName}'!AC${rowIndex}`,
+          range: `'${sheetName}'!AF${rowIndex}`,
           values: [[remarks]],
         });
       }
@@ -250,11 +288,14 @@ router.post("/update", async (req, res) => {
       },
     });
 
+    console.log(`✅ Step 4 Updated: Row ${rowIndex}, Status: ${status}`);
+
     res.json({
       success: true,
-      message: "After Field Visit Updated",
+      message: "Call/Deal Follow Up Updated Successfully",
     });
   } catch (err) {
+    console.error("❌ Error updating Step 4:", err);
     res.status(500).json({
       success: false,
       error: err.message,

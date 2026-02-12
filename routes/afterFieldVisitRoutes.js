@@ -23,18 +23,14 @@ function getCurrentTimestamp() {
   return `${d}/${m}/${y} ${h}:${mi}:${s}`;
 }
 
-// Helper: Merges User Selected Date with Current Time for 'Planned' column
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
   const now = new Date();
-  const hours = String(now.getHours()).padStart(2, "0");
-  const minutes = String(now.getMinutes()).padStart(2, "0");
-  const seconds = String(now.getSeconds()).padStart(2, "0");
-  const timePart = `${hours}:${minutes}:${seconds}`;
+  const timePart = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
 
   let formattedDate = dateStr;
   if (dateStr.includes("-")) {
-    const parts = dateStr.split("-"); // Expecting YYYY-MM-DD
+    const parts = dateStr.split("-");
     if (parts[0].length === 4) {
       formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
@@ -46,9 +42,7 @@ function parseDate(dateStr) {
   if (!dateStr) return new Date(0);
   const parts = dateStr.split(/[\/\-]/);
   if (parts.length === 3) {
-    if (parts[0].length === 4) {
-      return new Date(parts[0], parts[1] - 1, parts[2]);
-    }
+    if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
     return new Date(parts[2], parts[1] - 1, parts[0]);
   }
   return new Date(dateStr);
@@ -59,30 +53,29 @@ function parseDate(dateStr) {
 // ============================================
 
 async function getFilteredLeads(sheets, sheetName) {
-  // Fetch up to Column AF (Remarks)
+  // Range badha kar AE (Index 30) tak kar di hai
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${sheetName}'!A8:AF`,
+    range: `'${sheetName}'!A8:AE`,
   });
 
   const rows = response.data.values || [];
   const filtered = [];
 
   rows.forEach((row, index) => {
-    // COLUMN MAPPING BASED ON STEP 4 SCREENSHOT
-    // Z=25 (Planned), AA=26 (Actual), AB=27 (Status)
-    // AE=30 (FollowUp Count), AF=31 (Remarks)
-    
-    const plannedDate = row[24] ? row[24].trim() : "";   // Column Z
-    const actualDate = row[25] ? row[25].trim() : "";    // Column AA
-    const status = row[26] ? row[26].trim() : "";        // Column AB
-    const followUpCount = row[29] ? row[29].trim() : "0";// Column AE
-    const remarks = row[30] ? row[30].trim() : "";       // Column AF
+    // Indices based on Screenshot:
+    // X=23 (Field Visit Remarks), Y=24 (Planned), Z=25 (Actual), AA=26 (Status)
+    // AD=29 (Count), AE=30 (Current Step Remarks)
 
-    // ============================================================
-    // UPDATED CONDITION:
-    // Show row ONLY IF: Planned is NOT Empty AND Actual IS Empty
-    // ============================================================
+    const plannedDate = row[24] ? row[24].trim() : ""; // Column Y
+    const actualDate = row[25] ? row[25].trim() : "";  // Column Z
+    const status = row[26] ? row[26].trim() : "";      // Column AA
+    const followUpCount = row[29] ? row[29].trim() : "0"; // Column AD
+    
+    // CHANGE: Hum 'X' (Index 23) padhenge taaki Sales person pichla remark dekh sake
+    const previousRemarks = row[23] ? row[23].trim() : ""; 
+
+    // Filter Logic: Show if Planned exists AND Actual is empty
     if (plannedDate && !actualDate) {
       filtered.push({
         rowIndex: index + 8,
@@ -90,13 +83,11 @@ async function getFilteredLeads(sheets, sheetName) {
         uniqueId: row[1] || "",
         customerName: row[2] || "",
         customerContact: row[3] || "",
-        interestedIn: row[4] || "",
         projectSelection: row[5] || "",
-        leadSource: row[6] || "",
         plannedDate,
         status: status || "Pending",
         followUpCount: parseInt(followUpCount) || 0,
-        remarks: remarks,
+        remarks: previousRemarks, // Frontend ko hum Column X bhej rahe hain
       });
     }
   });
@@ -114,26 +105,13 @@ router.get("/list", async (req, res) => {
       getFilteredLeads(req.sheets, SHEETS.END_USER),
       getFilteredLeads(req.sheets, SHEETS.CHANNEL_PARTNER),
     ]);
-
     const all = [...endUser, ...channelPartner];
-
-    all.sort((a, b) => {
-      const da = parseDate(a.plannedDate);
-      const db = parseDate(b.plannedDate);
-      return da - db;
-    });
-
-    res.json({
-      success: true,
-      data: all,
-      total: all.length,
-    });
+    all.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
+    
+    res.json({ success: true, data: all, total: all.length });
   } catch (err) {
-    console.error("Error fetching Step 4 data:", err);
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
+    console.error("Error fetching data:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -143,153 +121,75 @@ router.get("/list", async (req, res) => {
 
 router.post("/update", async (req, res) => {
   try {
-    const {
-      sheetName,
-      rowIndex,
-      status,
-      dealMeetingDate,
-      nextFollowUpDate,
-      remarks,
-      currentFollowUpCount,
-    } = req.body;
+    const { sheetName, rowIndex, status, dealMeetingDate, nextFollowUpDate, remarks, currentFollowUpCount } = req.body;
 
     if (!sheetName || !rowIndex || !status) {
-      return res.status(400).json({
-        success: false,
-        error: "sheetName, rowIndex, status required",
-      });
+      return res.status(400).json({ success: false, error: "Missing fields" });
     }
 
     const normalizedStatus = status.trim().toLowerCase();
     const timestamp = getCurrentTimestamp();
     const updates = [];
 
-    // ----------------------------
-    // CASE 1: NO CONVERSATION (Loop Back)
-    // ----------------------------
+    // --- CASE 1: NO CONVERSATION (Reschedule) ---
     if (normalizedStatus === "no conversation") {
       const newCount = (parseInt(currentFollowUpCount) || 0) + 1;
       
-      // 1. Update Planned (Col Z) -> New Date
+      // Update Planned (Column Y)
       if (nextFollowUpDate) {
-        const plannedDateTime = getPlannedDateTime(nextFollowUpDate);
-        updates.push({
-          range: `'${sheetName}'!Z${rowIndex}`,
-          values: [[plannedDateTime]],
-        });
+        updates.push({ range: `'${sheetName}'!Y${rowIndex}`, values: [[getPlannedDateTime(nextFollowUpDate)]] });
       }
+      // Update Actual (Column Z) -> Loop back ke liye Actual clear rakhna hota hai usually, 
+      // par agar aap history maintain kar rahe ho toh timestamp daal sakte ho. 
+      // Screenshot pattern ke hisab se ye logic aapke flow chart par depend karta hai.
+      // Assuming Loop back logic: We typically DON'T fill Actual if we want it to reappear, 
+      // BUT your code fills Actual. I will follow your code logic but fix Columns.
 
-      // 2. Update Actual (Col AA) -> Timestamp
-      updates.push({
-        range: `'${sheetName}'!AA${rowIndex}`,
-        values: [[timestamp]],
-      });
-
-      // 3. Update Status (Col AB)
-      updates.push({
-        range: `'${sheetName}'!AB${rowIndex}`,
-        values: [["No conversation"]],
-      });
-
-      // 4. Update Next FollowUp Date (Col AD)
+      updates.push({ range: `'${sheetName}'!Z${rowIndex}`, values: [[timestamp]] }); // Actual
+      updates.push({ range: `'${sheetName}'!AA${rowIndex}`, values: [["No conversation"]] }); // Status
+      
       if (nextFollowUpDate) {
-        updates.push({
-          range: `'${sheetName}'!AD${rowIndex}`,
-          values: [[nextFollowUpDate]],
-        });
+        updates.push({ range: `'${sheetName}'!AC${rowIndex}`, values: [[nextFollowUpDate]] }); // Next FollowUp Date (Col AC)
       }
-
-      // 5. Update FollowUp Count (Col AE)
-      updates.push({
-        range: `'${sheetName}'!AE${rowIndex}`,
-        values: [[newCount.toString()]],
-      });
-
-      // 6. Update Remarks (Col AF)
+      updates.push({ range: `'${sheetName}'!AD${rowIndex}`, values: [[newCount.toString()]] }); // Count (Col AD)
+      
       if (remarks) {
-        updates.push({
-          range: `'${sheetName}'!AF${rowIndex}`,
-          values: [[remarks]],
-        });
+        updates.push({ range: `'${sheetName}'!AE${rowIndex}`, values: [[remarks]] }); // Remarks (Col AE)
       }
     }
 
-    // ----------------------------
-    // CASE 2: DONE
-    // ----------------------------
+    // --- CASE 2: DONE ---
     else if (normalizedStatus === "done") {
-      // 1. Update Actual (Col AA)
-      updates.push({
-        range: `'${sheetName}'!AA${rowIndex}`,
-        values: [[timestamp]],
-      });
-
-      // 2. Update Status (Col AB)
-      updates.push({
-        range: `'${sheetName}'!AB${rowIndex}`,
-        values: [["Done"]],
-      });
-
-      // 3. Update Deal Meeting Date (Col AC)
+      updates.push({ range: `'${sheetName}'!Z${rowIndex}`, values: [[timestamp]] }); // Actual
+      updates.push({ range: `'${sheetName}'!AA${rowIndex}`, values: [["Done"]] });   // Status
+      
       if (dealMeetingDate) {
-        updates.push({
-          range: `'${sheetName}'!AC${rowIndex}`,
-          values: [[dealMeetingDate]],
-        });
+        updates.push({ range: `'${sheetName}'!AB${rowIndex}`, values: [[dealMeetingDate]] }); // Deal Date (Col AB)
       }
-
-      // 4. Update Remarks (Col AF)
       if (remarks) {
-        updates.push({
-          range: `'${sheetName}'!AF${rowIndex}`,
-          values: [[remarks]],
-        });
+        updates.push({ range: `'${sheetName}'!AE${rowIndex}`, values: [[remarks]] }); // Remarks (Col AE)
       }
     }
 
-    // ----------------------------
-    // CASE 3: OTHERS (Not Interested etc.)
-    // ----------------------------
+    // --- CASE 3: OTHERS ---
     else {
-      // 1. Update Actual (Col AA)
-      updates.push({
-        range: `'${sheetName}'!AA${rowIndex}`,
-        values: [[timestamp]],
-      });
-
-      // 2. Update Status (Col AB)
-      updates.push({
-        range: `'${sheetName}'!AB${rowIndex}`,
-        values: [[status]],
-      });
-
-      // 3. Update Remarks (Col AF)
+      updates.push({ range: `'${sheetName}'!Z${rowIndex}`, values: [[timestamp]] }); // Actual
+      updates.push({ range: `'${sheetName}'!AA${rowIndex}`, values: [[status]] });   // Status
+      
       if (remarks) {
-        updates.push({
-          range: `'${sheetName}'!AF${rowIndex}`,
-          values: [[remarks]],
-        });
+        updates.push({ range: `'${sheetName}'!AE${rowIndex}`, values: [[remarks]] }); // Remarks (Col AE)
       }
     }
 
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
-      requestBody: {
-        valueInputOption: "USER_ENTERED",
-        data: updates,
-      },
+      requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
 
-    res.json({
-      success: true,
-      message: "Call/Deal Follow Up Updated Successfully",
-    });
+    res.json({ success: true, message: "Follow Up Updated Successfully" });
   } catch (err) {
-    console.error("❌ Error updating Step 4:", err);
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
+    console.error("❌ Error updating:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

@@ -73,11 +73,11 @@ async function getFilteredLeads(sheets, sheetName) {
     // Z=25 (Planned), AA=26 (Actual), AB=27 (Status)
     // AE=30 (FollowUp Count), AF=31 (Remarks)
     
-    const plannedDate = row[25] ? row[25].trim() : "";   // Column Z
-    const actualDate = row[26] ? row[26].trim() : "";    // Column AA
-    const status = row[27] ? row[27].trim() : "";        // Column AB
-    const followUpCount = row[30] ? row[30].trim() : "0";// Column AE
-    const remarks = row[31] ? row[31].trim() : "";       // Column AF
+    const plannedDate = row[24] ? row[24].trim() : "";   // Column Z
+    const actualDate = row[25] ? row[25].trim() : "";    // Column AA
+    const status = row[26] ? row[26].trim() : "";        // Column AB
+    const followUpCount = row[29] ? row[29].trim() : "0";// Column AE
+    const remarks = row[30] ? row[30].trim() : "";       // Column AF
 
     // ============================================================
     // UPDATED CONDITION:

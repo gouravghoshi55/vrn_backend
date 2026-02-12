@@ -7,10 +7,11 @@ const SHEETS = {
   CHANNEL_PARTNER: "Channel Partener Lead FMS",
 };
 
+// ... (getFilteredLeads function same as before) ...
+// Main copy paste kar raha hu getFilteredLeads taaki koi confusion na rahe range ko lekar
 async function getFilteredLeads(sheets, sheetName) {
   try {
-    // UPDATED: Range increased to 'R' to cover FollowUp Count (Column R)
-    // A8:R tak data fetch karo (Row 8 se start, Column A to R)
+    // Range A8:R (FollowUp Count tak)
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `'${sheetName}'!A8:R`,
@@ -18,31 +19,29 @@ async function getFilteredLeads(sheets, sheetName) {
     const rows = response.data.values || [];
     const filteredLeads = [];
     rows.forEach((row, index) => {
-      // UPDATED COLUMN INDICES BASED ON SCREENSHOT
-      // A=0, B=1, ... M=12, N=13, O=14, R=17
-      
-      const status = row[14] ? row[14].trim() : ""; // Column O (Status) - New Index 14
-      const plannedDate = row[12] ? row[12].trim() : ""; // Column M (Planned) - New Index 12
-      const actualDate = row[13] ? row[13].trim() : ""; // Column N (Actual) - New Index 13
-      const followUpCount = row[17] ? row[17].trim() : "0"; // Column R (FollowUp Count) - New Index 17
+      // Adjusted Indices based on +2 shift
+      const status = row[14] ? row[14].trim() : ""; // Col O
+      const plannedDate = row[12] ? row[12].trim() : ""; // Col M
+      const actualDate = row[13] ? row[13].trim() : ""; // Col N
+      const followUpCount = row[17] ? row[17].trim() : "0"; // Col R
 
       const statusLower = status.toLowerCase();
       if (status === "" || statusLower === "no conversation") {
         filteredLeads.push({
-          rowIndex: index + 8, // Actual row number in sheet
+          rowIndex: index + 8,
           sheetName: sheetName,
-          uniqueId: row[1] || "", // Column B (Unique ID)
-          customerName: row[2] || "", // Column C (Customer Name)
-          customerContact: row[3] || "", // Column D (Contact)
-          interestedIn: row[4] || "", // Column E
-          projectSelection: row[5] || "", // Column F
-          leadSource: row[6] || "", // Column G
-          leadGenNumber: row[7] || "", // Column H
-          leadGenName: row[8] || "", // Column I
-          plannedDate: plannedDate, // Column M
-          actualDate: actualDate, // Column N
-          status: status || "Pending", // Column O
-          followUpCount: parseInt(followUpCount) || 0, // Column R
+          uniqueId: row[1] || "",
+          customerName: row[2] || "",
+          customerContact: row[3] || "",
+          interestedIn: row[4] || "",
+          projectSelection: row[5] || "",
+          leadSource: row[6] || "",
+          leadGenNumber: row[7] || "",
+          leadGenName: row[8] || "",
+          plannedDate: plannedDate,
+          actualDate: actualDate,
+          status: status || "Pending",
+          followUpCount: parseInt(followUpCount) || 0,
         });
       }
     });
@@ -57,14 +56,13 @@ function parseDate(dateStr) {
   if (!dateStr) return new Date(0);
   const parts = dateStr.split(/[\/\-]/);
   if (parts.length === 3) {
-    if (parts[0].length === 4) {
-      return new Date(parts[0], parts[1] - 1, parts[2]);
-    }
+    if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
     return new Date(parts[2], parts[1] - 1, parts[0]);
   }
   return new Date(dateStr);
 }
 
+// 1. Current Timestamp for 'Actual' column
 function getCurrentTimestamp() {
   const dt = new Date().toLocaleString("en-IN", {
     timeZone: "Asia/Kolkata",
@@ -73,38 +71,60 @@ function getCurrentTimestamp() {
   return dt.replace(",", "");
 }
 
-router.get("/nbdin", async (req, res) => {
-  try {
-    console.log("📊 Fetching NBDIN data...");
-    const [endUserLeads, channelPartnerLeads] = await Promise.all([
-      getFilteredLeads(req.sheets, SHEETS.END_USER),
-      getFilteredLeads(req.sheets, SHEETS.CHANNEL_PARTNER),
-    ]);
-    console.log(`   End User Leads: ${endUserLeads.length}`);
-    console.log(`   Channel Partner Leads: ${channelPartnerLeads.length}`);
-    let allLeads = [...endUserLeads, ...channelPartnerLeads];
-
-    allLeads.sort((a, b) => {
-      const dateA = parseDate(a.plannedDate);
-      const dateB = parseDate(b.plannedDate);
-      return dateA - dateB;
-    });
-    console.log(`✅ Total Leads: ${allLeads.length}`);
-    res.json({
-      success: true,
-      data: allLeads,
-      total: allLeads.length,
-    });
-  } catch (error) {
-    console.error("❌ Error fetching NBD IN leads:", error.message);
-    res.status(500).json({
-      success: false,
-      error: "Failed to fetch leads",
-      message: error.message,
-    });
+// 2. NEW FUNCTION: Merges Selected Date with Current Time for 'Planned' column
+function formatPlannedDateWithTime(dateInput) {
+  if (!dateInput) return "";
+  
+  // dateInput usually comes as YYYY-MM-DD from frontend
+  // We need to convert it to DD/MM/YYYY
+  let datePart = dateInput;
+  if (dateInput.includes("-")) {
+      const parts = dateInput.split("-");
+      // If format is YYYY-MM-DD
+      if (parts[0].length === 4) {
+          datePart = `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
   }
+
+  // Get current time only
+  const now = new Date();
+  const timePart = now.toLocaleTimeString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour12: false,
+  });
+
+  // Return "DD/MM/YYYY HH:mm:ss"
+  return `${datePart} ${timePart}`;
+}
+
+// ... (GET route remains same) ...
+router.get("/nbdin", async (req, res) => {
+    // ... (Your existing get logic) ...
+    try {
+        console.log("📊 Fetching NBDIN data...");
+        const [endUserLeads, channelPartnerLeads] = await Promise.all([
+          getFilteredLeads(req.sheets, SHEETS.END_USER),
+          getFilteredLeads(req.sheets, SHEETS.CHANNEL_PARTNER),
+        ]);
+        let allLeads = [...endUserLeads, ...channelPartnerLeads];
+    
+        allLeads.sort((a, b) => {
+          const dateA = parseDate(a.plannedDate);
+          const dateB = parseDate(b.plannedDate);
+          return dateA - dateB;
+        });
+        res.json({
+          success: true,
+          data: allLeads,
+          total: allLeads.length,
+        });
+      } catch (error) {
+        res.status(500).json({ error: "Failed to fetch leads", message: error.message });
+      }
 });
 
+
+// --- UPDATED POST ROUTE ---
 router.post("/nbdin/update", async (req, res) => {
   try {
     const {
@@ -112,73 +132,75 @@ router.post("/nbdin/update", async (req, res) => {
       rowIndex,
       status,
       fieldVisitDate,
-      nextFollowUpDate,
+      nextFollowUpDate, // Input Format: YYYY-MM-DD
       currentFollowUpCount,
     } = req.body;
 
     console.log("📝 Updating NBDIN record:", { sheetName, rowIndex, status });
 
-    // Validation
     if (!sheetName || !rowIndex || !status) {
       return res.status(400).json({
         success: false,
-        error: "Missing required fields: sheetName, rowIndex, status",
+        error: "Missing required fields",
       });
     }
 
-    // Current timestamp for Actual column
-    const timestamp = getCurrentTimestamp();
+    const timestamp = getCurrentTimestamp(); // Current Date + Time
     const newFollowUpCount = (parseInt(currentFollowUpCount) || 0) + 1;
-    
     const updates = [];
 
-    // --- CORRECTION START: NEW COLUMN MAPPING BASED ON SCREENSHOT ---
+    // --- LOGIC FOR COLUMNS (Based on Screenshot +2 Shift) ---
+    // Old Planned (K) -> New Planned (M)
+    // Old Actual (L)  -> New Actual (N)
+    // Old Status (M)  -> New Status (O)
+    // Old Field (N)   -> New Field (P)
+    // Old Next (O)    -> New Next (Q)
+    // Old Count (P)   -> New Count (R)
 
-    // 1. Update 'Planned' Column (Ab Column M hai)
-    // Hum 'Planned' mein bhi Next FollowUp Date dalte hain taki agli baar sorting sahi ho
+    // 1. Column M: Planned (Next FollowUp Date + Current Time)
     if (nextFollowUpDate) {
+      const plannedDateTime = formatPlannedDateWithTime(nextFollowUpDate);
       updates.push({
-        range: `'${sheetName}'!M${rowIndex}`, // CHANGED: K -> M
-        values: [[nextFollowUpDate]],
+        range: `'${sheetName}'!M${rowIndex}`, 
+        values: [[plannedDateTime]], // Example: "15/02/2026 15:52:33"
       });
     }
 
-    // 2. Update 'Actual' Column (Ab Column N hai)
+    // 2. Column N: Actual (Current Timestamp)
     updates.push({
-      range: `'${sheetName}'!N${rowIndex}`, // CHANGED: L -> N
-      values: [[timestamp]],
+      range: `'${sheetName}'!N${rowIndex}`, 
+      values: [[timestamp]], 
     });
 
-    // 3. Update 'Status' Column (Ab Column O hai)
+    // 3. Column O: Status
     updates.push({
-      range: `'${sheetName}'!O${rowIndex}`, // CHANGED: M -> O
-      values: [[status]],
+      range: `'${sheetName}'!O${rowIndex}`, 
+      values: [[status]], 
     });
 
-    // 4. Update 'Field Visit Schedule date' Column (Ab Column P hai)
+    // 4. Column P: Field Visit Schedule Date
     if (fieldVisitDate) {
       updates.push({
-        range: `'${sheetName}'!P${rowIndex}`, // CHANGED: N -> P
-        values: [[fieldVisitDate]],
+        range: `'${sheetName}'!P${rowIndex}`, 
+        values: [[fieldVisitDate]], 
       });
     }
 
-    // 5. Update 'Next FollowUP Date' Column (Ab Column Q hai)
+    // 5. Column Q: Next FollowUp Date (Only Date usually)
     if (nextFollowUpDate) {
       updates.push({
-        range: `'${sheetName}'!Q${rowIndex}`, // CHANGED: O -> Q
-        values: [[nextFollowUpDate]],
+        range: `'${sheetName}'!Q${rowIndex}`, 
+        values: [[nextFollowUpDate]], 
       });
     }
 
-    // 6. Update 'FollowUP Count' Column (Ab Column R hai)
+    // 6. Column R: FollowUP Count
     updates.push({
-      range: `'${sheetName}'!R${rowIndex}`, // CHANGED: P -> R
-      values: [[newFollowUpCount.toString()]],
+      range: `'${sheetName}'!R${rowIndex}`, 
+      values: [[newFollowUpCount.toString()]], 
     });
 
-    // --- CORRECTION END ---
-
+    // Execute Batch Update
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
@@ -187,13 +209,8 @@ router.post("/nbdin/update", async (req, res) => {
       },
     });
 
-    console.log(`✅ Updated row ${rowIndex} in ${sheetName}`);
-    console.log(`   Status: ${status}`);
-    console.log(`   Field Visit Date: ${fieldVisitDate || "N/A"} -> Col P`);
-    console.log(`   Next FollowUp Date: ${nextFollowUpDate || "N/A"} -> Col Q`);
-    console.log(`   Actual Timestamp: ${timestamp} -> Col N`);
-    console.log(`   FollowUp Count: ${newFollowUpCount} -> Col R`);
-
+    console.log(`✅ Updated row ${rowIndex}. Planned (Col M) set to Date+Time.`);
+    
     res.json({
       success: true,
       message: "Lead updated successfully",
@@ -201,12 +218,11 @@ router.post("/nbdin/update", async (req, res) => {
         sheetName,
         rowIndex,
         status,
-        fieldVisitDate,
-        nextFollowUpDate,
         actualTimestamp: timestamp,
         followUpCount: newFollowUpCount,
       },
     });
+
   } catch (error) {
     console.error("❌ Error updating NBD IN lead:", error.message);
     res.status(500).json({

@@ -23,7 +23,6 @@ function getCurrentTimestamp() {
   return `${d}/${m}/${y} ${h}:${mi}:${s}`;
 }
 
-// Helper: Reschedule ke liye Date+Time merge karna
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
   const now = new Date();
@@ -34,7 +33,7 @@ function getPlannedDateTime(dateStr) {
 
   let formattedDate = dateStr;
   if (dateStr.includes("-")) {
-    const parts = dateStr.split("-"); 
+    const parts = dateStr.split("-");
     if (parts[0].length === 4) {
       formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
@@ -55,36 +54,35 @@ function parseDate(dateStr) {
 }
 
 // ============================================
-// FETCH LIST (GET)
+// FETCH LIST - Shows Pending + Rescheduled rows
 // ============================================
 
 async function getFilteredLeads(sheets, sheetName) {
-  // AJ tak data fetch karenge (AJ = Index 35)
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${sheetName}'!A8:AJ`,
+    range: `'${sheetName}'!A8:AK`,  // extended to AK to be safe
   });
 
   const rows = response.data.values || [];
   const filtered = [];
 
   rows.forEach((row, index) => {
-    // --- COLUMN MAPPING (Based on Screenshot Step 5) ---
-    // AE = 30 (Previous/Followup Remarks) -> READ THIS
-    // AF = 31 (Planned)
-    // AG = 32 (Actual)
-    // AH = 33 (Status)
-    // AJ = 35 (Current Meeting Remarks) -> WRITE HERE
+    // 0-based indices
+    const plannedDate = row[32] ? row[32].trim() : "";   // AG → index 32 (A=0, B=1, ..., AG=32)
+    const actualDate = row[33] ? row[33].trim() : "";  // AH → index 33
+    let status = row[34] ? row[34].trim() : "";  // AI → index 34
+    const previousRemarks = row[31] ? row[31].trim() : ""; // AE or wherever previous remarks are
 
-    const plannedDate = row[32] ? row[32].trim() : "";   // Column AF
-    const actualDate = row[33] ? row[33].trim() : "";    // Column AG
-    const status = row[34] ? row[34].trim() : "";        // Column AH
-    
-    // CHANGE: Hamein AE (30) padhna hai list dikhane ke liye
-    const previousRemarks = row[31] ? row[31].trim() : ""; 
+    // Show if planned exists AND it's not a final completed status
+    const completedStatuses = ["Done", "Visit Done", "Completed", "Failed", "Cancelled", "Rejected"];
+    const isCompleted = completedStatuses.some(s =>
+      status.toLowerCase().includes(s.toLowerCase())
+    );
 
-    // Filter: Show only if Planned exists AND Actual is empty
-    if (plannedDate && !actualDate) {
+    if (plannedDate && !isCompleted) {
+      // Normalize empty status to Pending
+      if (!status.trim()) status = "Pending";
+
       filtered.push({
         rowIndex: index + 8,
         sheetName,
@@ -94,8 +92,8 @@ async function getFilteredLeads(sheets, sheetName) {
         interestedIn: row[4] || "",
         projectSelection: row[5] || "",
         plannedDate,
-        status: status || "Pending",
-        remarks: previousRemarks, // Frontend ko Column AE bhej rahe hain
+        status,
+        remarks: previousRemarks,
       });
     }
   });
@@ -104,7 +102,7 @@ async function getFilteredLeads(sheets, sheetName) {
 }
 
 // ============================================
-// ROUTES
+// ROUTES - GET /list
 // ============================================
 
 router.get("/list", async (req, res) => {
@@ -116,11 +114,7 @@ router.get("/list", async (req, res) => {
 
     const all = [...endUser, ...channelPartner];
 
-    all.sort((a, b) => {
-      const da = parseDate(a.plannedDate);
-      const db = parseDate(b.plannedDate);
-      return da - db;
-    });
+    all.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
 
     res.json({
       success: true,
@@ -128,27 +122,18 @@ router.get("/list", async (req, res) => {
       total: all.length,
     });
   } catch (err) {
-    console.error("Error fetching Step 5 data:", err);
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
+    console.error("Error fetching leads:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // ============================================
-// UPDATE (POST)
+// UPDATE - POST /update
 // ============================================
 
 router.post("/update", async (req, res) => {
   try {
-    const {
-      sheetName,
-      rowIndex,
-      status,
-      rescheduleDate,
-      remarks,
-    } = req.body;
+    const { sheetName, rowIndex, status, rescheduleDate, remarks } = req.body;
 
     if (!sheetName || !rowIndex) {
       return res.status(400).json({
@@ -160,44 +145,39 @@ router.post("/update", async (req, res) => {
     const timestamp = getCurrentTimestamp();
     const updates = [];
 
-    // --- SCENARIO 1: RESCHEDULE ---
     if (rescheduleDate) {
-      const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
-      
-      // Update Planned (Col AF)
-      updates.push({
-        range: `'${sheetName}'!AF${rowIndex}`,
-        values: [[newPlannedDateTime]],
-      });
-      
-      // Status Update (Optional, keeping consistent)
-      updates.push({
-        range: `'${sheetName}'!AH${rowIndex}`,
-        values: [["Rescheduled"]], 
-      });
+      const newPlanned = getPlannedDateTime(rescheduleDate);
 
-    } 
-    // --- SCENARIO 2: DONE / FAILED ---
-    else {
-      // Update Actual (Col AG)
+      // Planned → AG
       updates.push({
         range: `'${sheetName}'!AG${rowIndex}`,
+        values: [[newPlanned]],
+      });
+
+      // Status → AI
+      updates.push({
+        range: `'${sheetName}'!AI${rowIndex}`,
+        values: [["Rescheduled"]],
+      });
+    } else {
+      // Actual → AH
+      updates.push({
+        range: `'${sheetName}'!AH${rowIndex}`,
         values: [[timestamp]],
       });
 
-      // Update Status (Col AH)
+      // Status → AI
       updates.push({
-        range: `'${sheetName}'!AH${rowIndex}`,
-        values: [[status]],
+        range: `'${sheetName}'!AI${rowIndex}`,
+        values: [[status || "Done"]],
       });
     }
 
-    // --- COMMON: UPDATE REMARKS (Col AJ) ---
-    // Naya remark hamesha Column AJ mein jayega
-    if (remarks !== undefined) {
+    // Remarks → AK (only if provided and not empty)
+    if (remarks !== undefined && remarks.trim() !== "") {
       updates.push({
-        range: `'${sheetName}'!AJ${rowIndex}`,
-        values: [[remarks]],
+        range: `'${sheetName}'!AK${rowIndex}`,
+        values: [[remarks.trim()]],
       });
     }
 
@@ -211,15 +191,11 @@ router.post("/update", async (req, res) => {
 
     res.json({
       success: true,
-      message: rescheduleDate ? "Rescheduled Successfully" : "Status Updated Successfully",
+      message: rescheduleDate ? "Rescheduled Successfully" : "Updated Successfully",
     });
-
   } catch (err) {
-    console.error("❌ Error updating Step 5:", err);
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
+    console.error("Update failed:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

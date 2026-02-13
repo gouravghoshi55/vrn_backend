@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-
 const SHEETS = {
   END_USER: "END USER LEADS FMS",
   CHANNEL_PARTNER: "Channel Partener Lead FMS",
@@ -10,7 +9,6 @@ const SHEETS = {
 // ======================================================
 // HELPERS
 // ======================================================
-
 function getCurrentTimestamp() {
   const now = new Date();
   const day = String(now.getDate()).padStart(2, "0");
@@ -25,18 +23,15 @@ function getCurrentTimestamp() {
 // Handles "YYYY-MM-DD" and "YYYY-MM-DDTHH:mm"
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
-
   if (dateStr.includes("T")) {
     const [datePart, timePart] = dateStr.split("T");
     const [year, month, day] = datePart.split("-");
     return `${day}/${month}/${year} ${timePart}:00`;
   }
-
   const now = new Date();
   const hours = String(now.getHours()).padStart(2, "0");
   const minutes = String(now.getMinutes()).padStart(2, "0");
   const seconds = String(now.getSeconds()).padStart(2, "0");
-
   let formattedDate = dateStr;
   if (dateStr.includes("-")) {
     const parts = dateStr.split("-");
@@ -44,7 +39,6 @@ function getPlannedDateTime(dateStr) {
       formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
   }
-
   return `${formattedDate} ${hours}:${minutes}:${seconds}`;
 }
 
@@ -61,28 +55,22 @@ function parseDate(dateStr) {
 // ======================================================
 // READ DATA
 // ======================================================
-
 async function getFilteredLeads(sheets, sheetName) {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `'${sheetName}'!A8:X`,
     });
-
     const rows = response.data.values || [];
     const filteredLeads = [];
-
     rows.forEach((row, index) => {
       const importantNote = row[10] ? row[10].trim() : "";
-
       const plannedDate = row[20] ? row[20].trim() : "";
       const actualDate = row[22] ? row[22].trim() : "";
       const status = row[23] ? row[23].trim() : "";
       const remarkFromT = row[19] ? row[19].trim() : "";
       const remarkFromY = row[25] ? row[25].trim() : "";
-
       let finalRemarks = "";
-
       // First priority -> T
       if (remarkFromT) {
         finalRemarks = remarkFromT;
@@ -111,7 +99,6 @@ async function getFilteredLeads(sheets, sheetName) {
         });
       }
     });
-
     return filteredLeads;
   } catch (error) {
     console.error(`Error fetching ${sheetName}:`, error.message);
@@ -122,22 +109,18 @@ async function getFilteredLeads(sheets, sheetName) {
 // ======================================================
 // ROUTES
 // ======================================================
-
 router.get("/list", async (req, res) => {
   try {
     const [endUserLeads, channelPartnerLeads] = await Promise.all([
       getFilteredLeads(req.sheets, SHEETS.END_USER),
       getFilteredLeads(req.sheets, SHEETS.CHANNEL_PARTNER),
     ]);
-
     let allLeads = [...endUserLeads, ...channelPartnerLeads];
-
     allLeads.sort((a, b) => {
       const dateA = parseDate(a.plannedDate);
       const dateB = parseDate(b.plannedDate);
       return dateA - dateB;
     });
-
     res.json({ success: true, data: allLeads, total: allLeads.length });
   } catch (error) {
     res.status(500).json({
@@ -155,7 +138,6 @@ router.get("/list", async (req, res) => {
 router.post("/update", async (req, res) => {
   try {
     const { sheetName, rowIndex, status, remarks, rescheduleDate } = req.body;
-
     console.log("📝 Updating:", { sheetName, rowIndex, status, rescheduleDate });
 
     if (!sheetName || !rowIndex) {
@@ -170,7 +152,7 @@ router.post("/update", async (req, res) => {
     if (rescheduleDate) {
       const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
       updates.push({
-        range: `'${sheetName}'!T${rowIndex}`,
+        range: `'${sheetName}'!U${rowIndex}`,   // ← Changed from T → U
         values: [[newPlannedDateTime]],
       });
     }
@@ -178,19 +160,19 @@ router.post("/update", async (req, res) => {
     else {
       const timestamp = getCurrentTimestamp();
       updates.push({
-        range: `'${sheetName}'!U${rowIndex}`,
+        range: `'${sheetName}'!U${rowIndex}`,   // Actual visit time
         values: [[timestamp]],
       });
       updates.push({
-        range: `'${sheetName}'!V${rowIndex}`,
+        range: `'${sheetName}'!W${rowIndex}`,   // Status
         values: [[status]],
       });
     }
 
-    // UPDATE REMARKS -> COLUMN X
+    // UPDATE REMARKS → COLUMN Y
     if (remarks !== undefined) {
       updates.push({
-        range: `'${sheetName}'!X${rowIndex}`,
+        range: `'${sheetName}'!Y${rowIndex}`,
         values: [[remarks]],
       });
     }

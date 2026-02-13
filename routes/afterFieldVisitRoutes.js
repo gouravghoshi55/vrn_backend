@@ -1,6 +1,5 @@
 const express = require("express");
 const router = express.Router();
-
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 const SHEETS = {
@@ -8,29 +7,31 @@ const SHEETS = {
   CHANNEL_PARTNER: "Channel Partener Lead FMS",
 };
 
-// ============================================
-// Helpers
-// ============================================
+// --- HELPER FUNCTIONS ---
 
 function getCurrentTimestamp() {
   const now = new Date();
-  const d = String(now.getDate()).padStart(2, "0");
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const y = now.getFullYear();
-  const h = String(now.getHours()).padStart(2, "0");
-  const mi = String(now.getMinutes()).padStart(2, "0");
-  const s = String(now.getSeconds()).padStart(2, "0");
-  return `${d}/${m}/${y} ${h}:${mi}:${s}`;
+  const day = String(now.getDate()).padStart(2, "0");
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const year = now.getFullYear();
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 
+// Reschedule ke liye Date + Time formatter
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
   const now = new Date();
-  const timePart = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+  const timePart = `${hours}:${minutes}:${seconds}`;
 
   let formattedDate = dateStr;
   if (dateStr.includes("-")) {
-    const parts = dateStr.split("-");
+    const parts = dateStr.split("-"); // Expecting YYYY-MM-DD
     if (parts[0].length === 4) {
       formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
@@ -48,137 +49,123 @@ function parseDate(dateStr) {
   return new Date(dateStr);
 }
 
-// ============================================
-// FETCH LIST (GET)
-// ============================================
-
+// --- READ DATA ---
 async function getFilteredLeads(sheets, sheetName) {
-  // Range badha kar AE (Index 30) tak kar di hai
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `'${sheetName}'!A8:AE`,
-  });
-
-  const rows = response.data.values || [];
-  const filtered = [];
-
-  rows.forEach((row, index) => {
-    // Indices based on Screenshot:
-    // X=23 (Field Visit Remarks), Y=24 (Planned), Z=25 (Actual), AA=26 (Status)
-    // AD=29 (Count), AE=30 (Current Step Remarks)
-
-    const plannedDate = row[25] ? row[25].trim() : ""; // Column Y
-    const actualDate = row[26] ? row[26].trim() : "";  // Column Z
-    const status = row[27] ? row[27].trim() : "";      // Column AA
-    const followUpCount = row[30] ? row[30].trim() : "0"; // Column AD
+  try {
+    // Fetch up to Column AB (Index 27) to include the Status column
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${sheetName}'!A8:AB`, 
+    });
     
-    // CHANGE: Hum 'Y' (Index 23) padhenge taaki Sales person pichla remark dekh sake
-    const previousRemarks = row[24] ? row[24].trim() : ""; 
+    const rows = response.data.values || [];
+    const filteredLeads = [];
+    
+    rows.forEach((row, index) => {
+      // --- COLUMN MAPPING (Updated) ---
+      // V = 21 (Planned)
+      // W = 22 (Actual)
+      // AB = 27 (Status - "No conversation")
 
-    // Filter Logic: Show if Planned exists AND Actual is empty
-    if (plannedDate && !actualDate) {
-      filtered.push({
-        rowIndex: index + 8,
-        sheetName,
-        uniqueId: row[1] || "",
-        customerName: row[2] || "",
-        customerContact: row[3] || "",
-        projectSelection: row[5] || "",
-        plannedDate,
-        status: status || "Pending",
-        followUpCount: parseInt(followUpCount) || 0,
-        remarks: previousRemarks, // Frontend ko hum Column X bhej rahe hain
-      });
-    }
-  });
+      const plannedDate = row[21] ? row[21].trim() : ""; // Column V
+      const actualDate = row[22] ? row[22].trim() : "";  // Column W
+      
+      // Get Status from Column AB (Index 27)
+      const status = row[27] ? row[27].trim() : "";      // Column AB
+      
+      // Previous Step ke remarks (Assuming Column U/Index 20 is still used for context)
+      const previousRemarks = row[20] ? row[20].trim() : ""; 
 
-  return filtered;
+      // --- FILTER CONDITION ---
+      // 1. Show if Planned is set and Actual is empty
+      // OR
+      // 2. Show if Status is "No conversation"
+      const isPendingVisit = plannedDate && !actualDate;
+      const isNoConversation = status === "No conversation";
+
+      if (isPendingVisit || isNoConversation) {
+        filteredLeads.push({
+          rowIndex: index + 8,
+          sheetName: sheetName,
+          uniqueId: row[1] || "",
+          customerName: row[2] || "",
+          customerContact: row[3] || "",
+          interestedIn: row[4] || "",
+          projectSelection: row[5] || "",
+          leadSource: row[6] || "",
+          leadGenNumber: row[7] || "",
+          leadGenName: row[8] || "",
+          plannedDate: plannedDate,
+          status: status || "Pending",
+          remarks: previousRemarks, 
+        });
+      }
+    });
+    return filteredLeads;
+  } catch (error) {
+    console.error(`Error fetching ${sheetName}:`, error.message);
+    throw error;
+  }
 }
 
-// ============================================
-// ROUTES
-// ============================================
+// --- ROUTES ---
 
 router.get("/list", async (req, res) => {
   try {
-    const [endUser, channelPartner] = await Promise.all([
+    const [endUserLeads, channelPartnerLeads] = await Promise.all([
       getFilteredLeads(req.sheets, SHEETS.END_USER),
       getFilteredLeads(req.sheets, SHEETS.CHANNEL_PARTNER),
     ]);
-    const all = [...endUser, ...channelPartner];
-    all.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
-    
-    res.json({ success: true, data: all, total: all.length });
-  } catch (err) {
-    console.error("Error fetching data:", err);
-    res.status(500).json({ success: false, error: err.message });
+    let allLeads = [...endUserLeads, ...channelPartnerLeads];
+    allLeads.sort((a, b) => {
+      const dateA = parseDate(a.plannedDate);
+      const dateB = parseDate(b.plannedDate);
+      return dateA - dateB;
+    });
+    res.json({ success: true, data: allLeads, total: allLeads.length });
+  } catch (error) {
+    res.status(500).json({ success: false, error: "Failed to fetch leads", message: error.message });
   }
 });
 
-// ============================================
-// UPDATE (POST)
-// ============================================
-
 router.post("/update", async (req, res) => {
   try {
-    const { sheetName, rowIndex, status, dealMeetingDate, nextFollowUpDate, remarks, currentFollowUpCount } = req.body;
+    const { sheetName, rowIndex, status, remarks, rescheduleDate } = req.body;
+    console.log("📝 Updating Field Visit:", { sheetName, rowIndex, status, rescheduleDate });
 
-    if (!sheetName || !rowIndex || !status) {
-      return res.status(400).json({ success: false, error: "Missing fields" });
+    if (!sheetName || !rowIndex) {
+      return res.status(400).json({ success: false, error: "Missing required fields" });
     }
 
-    const normalizedStatus = status.trim().toLowerCase();
-    const timestamp = getCurrentTimestamp();
     const updates = [];
 
-    // --- CASE 1: NO CONVERSATION (Reschedule) ---
-    if (normalizedStatus === "no conversation") {
-      const newCount = (parseInt(currentFollowUpCount) || 0) + 1;
-      
-      // Update Planned (Column Y)
-      if (nextFollowUpDate) {
-        updates.push({ range: `'${sheetName}'!Y${rowIndex}`, values: [[getPlannedDateTime(nextFollowUpDate)]] });
-      }
-      // Update Actual (Column Z) -> Loop back ke liye Actual clear rakhna hota hai usually, 
-      // par agar aap history maintain kar rahe ho toh timestamp daal sakte ho. 
-      // Screenshot pattern ke hisab se ye logic aapke flow chart par depend karta hai.
-      // Assuming Loop back logic: We typically DON'T fill Actual if we want it to reappear, 
-      // BUT your code fills Actual. I will follow your code logic but fix Columns.
-
-      updates.push({ range: `'${sheetName}'!Z${rowIndex}`, values: [[timestamp]] }); // Actual
-      updates.push({ range: `'${sheetName}'!AA${rowIndex}`, values: [["No conversation"]] }); // Status
-      
-      if (nextFollowUpDate) {
-        updates.push({ range: `'${sheetName}'!AC${rowIndex}`, values: [[nextFollowUpDate]] }); // Next FollowUp Date (Col AC)
-      }
-      updates.push({ range: `'${sheetName}'!AD${rowIndex}`, values: [[newCount.toString()]] }); // Count (Col AD)
-      
-      if (remarks) {
-        updates.push({ range: `'${sheetName}'!AE${rowIndex}`, values: [[remarks]] }); // Remarks (Col AE)
-      }
-    }
-
-    // --- CASE 2: DONE ---
-    else if (normalizedStatus === "done") {
-      updates.push({ range: `'${sheetName}'!Z${rowIndex}`, values: [[timestamp]] }); // Actual
-      updates.push({ range: `'${sheetName}'!AA${rowIndex}`, values: [["Done"]] });   // Status
-      
-      if (dealMeetingDate) {
-        updates.push({ range: `'${sheetName}'!AB${rowIndex}`, values: [[dealMeetingDate]] }); // Deal Date (Col AB)
-      }
-      if (remarks) {
-        updates.push({ range: `'${sheetName}'!AE${rowIndex}`, values: [[remarks]] }); // Remarks (Col AE)
-      }
-    }
-
-    // --- CASE 3: OTHERS ---
+    // SCENARIO 1: RESCHEDULE (Update Planned - Col V)
+    if (rescheduleDate) {
+      const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
+      updates.push({
+        range: `'${sheetName}'!V${rowIndex}`, // Column V (Planned)
+        values: [[newPlannedDateTime]],
+      });
+    } 
+    // SCENARIO 2: MARK AS DONE (Update Actual - Col W, Status - Col X)
     else {
-      updates.push({ range: `'${sheetName}'!Z${rowIndex}`, values: [[timestamp]] }); // Actual
-      updates.push({ range: `'${sheetName}'!AA${rowIndex}`, values: [[status]] });   // Status
-      
-      if (remarks) {
-        updates.push({ range: `'${sheetName}'!AE${rowIndex}`, values: [[remarks]] }); // Remarks (Col AE)
-      }
+      const timestamp = getCurrentTimestamp();
+      updates.push({
+        range: `'${sheetName}'!W${rowIndex}`, // Column W (Actual)
+        values: [[timestamp]],
+      });
+      updates.push({
+        range: `'${sheetName}'!X${rowIndex}`, // Column X (Status)
+        values: [[status]],
+      });
+    }
+
+    // UPDATE REMARKS (Always update Col Z - Field Visit Feedback)
+    if (remarks !== undefined) {
+      updates.push({
+        range: `'${sheetName}'!Z${rowIndex}`, // Column Z (Remarks)
+        values: [[remarks]],
+      });
     }
 
     await req.sheets.spreadsheets.values.batchUpdate({
@@ -186,10 +173,15 @@ router.post("/update", async (req, res) => {
       requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
 
-    res.json({ success: true, message: "Follow Up Updated Successfully" });
-  } catch (err) {
-    console.error("❌ Error updating:", err);
-    res.status(500).json({ success: false, error: err.message });
+    console.log(`✅ Updated Row ${rowIndex}. Rescheduled: ${!!rescheduleDate}`);
+
+    res.json({
+      success: true,
+      message: rescheduleDate ? "Visit Rescheduled successfully" : "Field Visit marked as Done",
+    });
+  } catch (error) {
+    console.error("❌ Error updating Field Visit:", error.message);
+    res.status(500).json({ success: false, error: "Failed to update lead", message: error.message });
   }
 });
 

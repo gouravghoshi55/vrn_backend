@@ -20,7 +20,7 @@ function getCurrentTimestamp() {
   return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 
-// Reschedule ke liye Date + Time formatter
+// Date Formatter
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
   const now = new Date();
@@ -30,12 +30,14 @@ function getPlannedDateTime(dateStr) {
   const timePart = `${hours}:${minutes}:${seconds}`;
 
   let formattedDate = dateStr;
+  // Agar date YYYY-MM-DD format mein aayi hai toh usse DD/MM/YYYY convert karein
   if (dateStr.includes("-")) {
-    const parts = dateStr.split("-"); // Expecting YYYY-MM-DD
+    const parts = dateStr.split("-"); 
     if (parts[0].length === 4) {
       formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
   }
+  // Google Sheets mein consistent format ke liye Time add kar rahe hain
   return `${formattedDate} ${timePart}`;
 }
 
@@ -52,7 +54,7 @@ function parseDate(dateStr) {
 // --- READ DATA ---
 async function getFilteredLeads(sheets, sheetName) {
   try {
-    // UPDATED: Fetch up to Column AF (Index 31) to include Remarks
+    // Column AF (Index 31) tak data read kar rahe hain
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `'${sheetName}'!A8:AF`, 
@@ -62,18 +64,19 @@ async function getFilteredLeads(sheets, sheetName) {
     const filteredLeads = [];
     
     rows.forEach((row, index) => {
-      // --- COLUMN MAPPING UPDATED (Based on Screenshot) ---
+      // --- COLUMN MAPPING ---
       // Z  = 25 (Planned)
       // AA = 26 (Actual)
       // AB = 27 (Status)
+      // AD = 29 (Next FollowUP Date)
+      // AE = 30 (FollowUP Count)
       // AF = 31 (Remarks)
 
-      const plannedDate = row[25] ? row[25].trim() : ""; // Column Z
-      const actualDate = row[26] ? row[26].trim() : "";  // Column AA
-      const status = row[27] ? row[27].trim() : "";      // Column AB
-      const currentRemarks = row[31] ? row[31].trim() : ""; // Column AF
+      const plannedDate = row[25] ? row[25].trim() : "";
+      const actualDate = row[26] ? row[26].trim() : "";
+      const status = row[27] ? row[27].trim() : "";
+      const remarks = row[31] ? row[31].trim() : ""; 
 
-      // --- FILTER CONDITION ---
       const isPendingVisit = plannedDate && !actualDate;
       const isNoConversation = status === "No conversation";
 
@@ -83,15 +86,11 @@ async function getFilteredLeads(sheets, sheetName) {
           sheetName: sheetName,
           uniqueId: row[1] || "",
           customerName: row[2] || "",
-          customerContact: row[3] || "",
-          interestedIn: row[4] || "",
-          projectSelection: row[5] || "",
-          leadSource: row[6] || "",
-          leadGenNumber: row[7] || "",
-          leadGenName: row[8] || "",
           plannedDate: plannedDate,
           status: status || "Pending",
-          remarks: currentRemarks, // Now mapped to AF
+          remarks: remarks,
+          // Extra info agar frontend pe chahiye ho
+          followUpCount: row[30] || "0" 
         });
       }
     });
@@ -122,59 +121,105 @@ router.get("/list", async (req, res) => {
   }
 });
 
+// --- UPDATE ROUTE (FIXED LOGIC) ---
 router.post("/update", async (req, res) => {
   try {
     const { sheetName, rowIndex, status, remarks, rescheduleDate } = req.body;
-    console.log("📝 Updating Field Visit:", { sheetName, rowIndex, status, rescheduleDate });
+    console.log("📝 Updating Data:", { sheetName, rowIndex, status, rescheduleDate });
 
     if (!sheetName || !rowIndex) {
       return res.status(400).json({ success: false, error: "Missing required fields" });
     }
 
+    // STEP 1: Current FollowUP Count (Column AE) read karein
+    const countResponse = await req.sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${sheetName}'!AE${rowIndex}`,
+    });
+
+    let currentCount = 0;
+    if (countResponse.data.values && countResponse.data.values[0]) {
+      currentCount = parseInt(countResponse.data.values[0][0]) || 0;
+    }
+    const newCount = currentCount + 1; // Count increase by 1
+
     const updates = [];
 
-    // SCENARIO 1: RESCHEDULE (Update Planned - Col Z)
-    if (rescheduleDate) {
-      const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
-      updates.push({
-        range: `'${sheetName}'!Z${rowIndex}`, // UPDATED: Column Z (Planned)
-        values: [[newPlannedDateTime]],
-      });
-    } 
-    // SCENARIO 2: MARK AS DONE (Update Actual - Col AA, Status - Col AB)
-    else {
-      const timestamp = getCurrentTimestamp();
-      updates.push({
-        range: `'${sheetName}'!AA${rowIndex}`, // UPDATED: Column AA (Actual)
-        values: [[timestamp]],
-      });
-      updates.push({
-        range: `'${sheetName}'!AB${rowIndex}`, // UPDATED: Column AB (Status)
-        values: [[status]],
-      });
-    }
+    // --- LOGIC: ALWAYS UPDATE COUNT & REMARKS ---
+    
+    // 1. Update FollowUP Count (Column AE)
+    updates.push({
+      range: `'${sheetName}'!AE${rowIndex}`,
+      values: [[newCount]],
+    });
 
-    // UPDATE REMARKS (Always update Col AF - Remarks)
+    // 2. Update Remarks (Column AF)
     if (remarks !== undefined) {
       updates.push({
-        range: `'${sheetName}'!AF${rowIndex}`, // UPDATED: Column AF (Remarks)
+        range: `'${sheetName}'!AF${rowIndex}`,
         values: [[remarks]],
       });
     }
 
+    // --- LOGIC: RESCHEDULE VS ACTUAL UPDATE ---
+
+    if (rescheduleDate) {
+      // SCENARIO 1: RESCHEDULE (Date Override)
+      const formattedDate = getPlannedDateTime(rescheduleDate);
+
+      // A. Update Next FollowUP Date (Column AD)
+      updates.push({
+        range: `'${sheetName}'!AD${rowIndex}`,
+        values: [[formattedDate]],
+      });
+
+      // B. Override Planned Date (Column Z) with same date
+      updates.push({
+        range: `'${sheetName}'!Z${rowIndex}`,
+        values: [[formattedDate]],
+      });
+
+      // (Optional) Agar reschedule ho raha hai toh Status bhi update kar sakte hain
+      if (status) {
+         updates.push({
+          range: `'${sheetName}'!AB${rowIndex}`, // Column AB (Status)
+          values: [[status]],
+        });
+      }
+
+    } else {
+      // SCENARIO 2: VISIT DONE / STATUS UPDATE (No Date Change)
+      const timestamp = getCurrentTimestamp();
+
+      // A. Update Actual Time (Column AA)
+      updates.push({
+        range: `'${sheetName}'!AA${rowIndex}`,
+        values: [[timestamp]],
+      });
+
+      // B. Update Status (Column AB)
+      updates.push({
+        range: `'${sheetName}'!AB${rowIndex}`,
+        values: [[status]],
+      });
+    }
+
+    // Execute Batch Update
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
 
-    console.log(`✅ Updated Row ${rowIndex}. Rescheduled: ${!!rescheduleDate}`);
+    console.log(`✅ Row ${rowIndex} Updated. New Count: ${newCount}`);
 
     res.json({
       success: true,
-      message: rescheduleDate ? "Visit Rescheduled successfully" : "Field Visit marked as Done",
+      message: "Lead updated successfully",
+      newFollowUpCount: newCount
     });
+
   } catch (error) {
-    console.error("❌ Error updating Field Visit:", error.message);
+    console.error("❌ Error updating lead:", error.message);
     res.status(500).json({ success: false, error: "Failed to update lead", message: error.message });
   }
 });

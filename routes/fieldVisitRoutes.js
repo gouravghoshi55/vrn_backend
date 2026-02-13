@@ -76,8 +76,8 @@ async function getFilteredLeads(sheets, sheetName) {
       const importantNote = row[10] ? row[10].trim() : "";
 
       const plannedDate = row[20] ? row[20].trim() : "";
-      const actualDate = row[21] ? row[21].trim() : "";
-      const status = row[22] ? row[22].trim() : "";
+      const actualDate = row[22] ? row[22].trim() : "";
+      const status = row[23] ? row[23].trim() : "";
       // =============================
       // REMARKS LOGIC (T first, then Y)
       // =============================
@@ -85,7 +85,7 @@ async function getFilteredLeads(sheets, sheetName) {
       // T = index 19
       // Y = index 24
       const remarkFromT = row[19] ? row[19].trim() : "";
-      const remarkFromY = row[24] ? row[24].trim() : "";
+      const remarkFromY = row[25] ? row[25].trim() : "";
 
       let finalRemarks = "";
 

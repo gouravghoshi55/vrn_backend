@@ -52,34 +52,28 @@ function parseDate(dateStr) {
 // --- READ DATA ---
 async function getFilteredLeads(sheets, sheetName) {
   try {
-    // Fetch up to Column AB (Index 27) to include the Status column
+    // UPDATED: Fetch up to Column AF (Index 31) to include Remarks
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${sheetName}'!A8:AB`, 
+      range: `'${sheetName}'!A8:AF`, 
     });
     
     const rows = response.data.values || [];
     const filteredLeads = [];
     
     rows.forEach((row, index) => {
-      // --- COLUMN MAPPING (Updated) ---
-      // V = 21 (Planned)
-      // W = 22 (Actual)
-      // AB = 27 (Status - "No conversation")
+      // --- COLUMN MAPPING UPDATED (Based on Screenshot) ---
+      // Z  = 25 (Planned)
+      // AA = 26 (Actual)
+      // AB = 27 (Status)
+      // AF = 31 (Remarks)
 
-      const plannedDate = row[21] ? row[21].trim() : ""; // Column V
-      const actualDate = row[22] ? row[22].trim() : "";  // Column W
-      
-      // Get Status from Column AB (Index 27)
+      const plannedDate = row[25] ? row[25].trim() : ""; // Column Z
+      const actualDate = row[26] ? row[26].trim() : "";  // Column AA
       const status = row[27] ? row[27].trim() : "";      // Column AB
-      
-      // Previous Step ke remarks (Assuming Column U/Index 20 is still used for context)
-      const previousRemarks = row[20] ? row[20].trim() : ""; 
+      const currentRemarks = row[31] ? row[31].trim() : ""; // Column AF
 
       // --- FILTER CONDITION ---
-      // 1. Show if Planned is set and Actual is empty
-      // OR
-      // 2. Show if Status is "No conversation"
       const isPendingVisit = plannedDate && !actualDate;
       const isNoConversation = status === "No conversation";
 
@@ -97,7 +91,7 @@ async function getFilteredLeads(sheets, sheetName) {
           leadGenName: row[8] || "",
           plannedDate: plannedDate,
           status: status || "Pending",
-          remarks: previousRemarks, 
+          remarks: currentRemarks, // Now mapped to AF
         });
       }
     });
@@ -139,31 +133,31 @@ router.post("/update", async (req, res) => {
 
     const updates = [];
 
-    // SCENARIO 1: RESCHEDULE (Update Planned - Col V)
+    // SCENARIO 1: RESCHEDULE (Update Planned - Col Z)
     if (rescheduleDate) {
       const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
       updates.push({
-        range: `'${sheetName}'!V${rowIndex}`, // Column V (Planned)
+        range: `'${sheetName}'!Z${rowIndex}`, // UPDATED: Column Z (Planned)
         values: [[newPlannedDateTime]],
       });
     } 
-    // SCENARIO 2: MARK AS DONE (Update Actual - Col W, Status - Col X)
+    // SCENARIO 2: MARK AS DONE (Update Actual - Col AA, Status - Col AB)
     else {
       const timestamp = getCurrentTimestamp();
       updates.push({
-        range: `'${sheetName}'!W${rowIndex}`, // Column W (Actual)
+        range: `'${sheetName}'!AA${rowIndex}`, // UPDATED: Column AA (Actual)
         values: [[timestamp]],
       });
       updates.push({
-        range: `'${sheetName}'!X${rowIndex}`, // Column X (Status)
+        range: `'${sheetName}'!AB${rowIndex}`, // UPDATED: Column AB (Status)
         values: [[status]],
       });
     }
 
-    // UPDATE REMARKS (Always update Col Z - Field Visit Feedback)
+    // UPDATE REMARKS (Always update Col AF - Remarks)
     if (remarks !== undefined) {
       updates.push({
-        range: `'${sheetName}'!Z${rowIndex}`, // Column Z (Remarks)
+        range: `'${sheetName}'!AF${rowIndex}`, // UPDATED: Column AF (Remarks)
         values: [[remarks]],
       });
     }

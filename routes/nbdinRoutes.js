@@ -20,65 +20,81 @@ function parseDate(dateStr) {
 }
 
 // Generates "DD/MM/YYYY HH:mm:ss" using current time + selected date
+// Generates "DD/MM/YYYY HH:mm:ss"
+// Handles both "YYYY-MM-DD" (adds current time) AND "YYYY-MM-DDTHH:mm" (uses selected time)
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
+
+  // CASE 1: Agar input "datetime-local" se aaya hai (Example: "2026-02-14T11:43")
+  if (dateStr.includes("T")) {
+    const [datePart, timePart] = dateStr.split("T"); // "2026-02-14" aur "11:43" alag ho gaye
+    const [year, month, day] = datePart.split("-");
+
+    // Return format: DD/MM/YYYY HH:mm:00
+    return `${day}/${month}/${year} ${timePart}:00`;
+  }
+
+  // CASE 2: Agar input sirf Date hai ("2026-02-14") -> Current Time add karega
   const now = new Date();
   const hours = String(now.getHours()).padStart(2, "0");
   const minutes = String(now.getMinutes()).padStart(2, "0");
   const seconds = String(now.getSeconds()).padStart(2, "0");
-  const timePart = `${hours}:${minutes}:${seconds}`;
+  const currentTime = `${hours}:${minutes}:${seconds}`;
 
   let formattedDate = dateStr;
   if (dateStr.includes("-")) {
     const parts = dateStr.split("-"); // Expecting YYYY-MM-DD
     if (parts[0].length === 4) {
-      formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+      formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`; // Convert to DD/MM/YYYY
     }
   }
-  return `${formattedDate} ${timePart}`;
+
+  return `${formattedDate} ${currentTime}`;
 }
 
 // --- READ DATA (GET) ---
 
 async function getFilteredLeads(sheets, sheetName) {
   try {
-    // Range A8:S tak (S = Latest Remarks)
+    // Range badhakar T tak kar di hai
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${sheetName}'!A8:S`, 
+      range: `'${sheetName}'!A8:T`,
     });
     const rows = response.data.values || [];
     const filteredLeads = [];
     rows.forEach((row, index) => {
-      
-      // --- COLUMN INDICES ---
-      // L = 11 (Remark of Qualification - Initial)
-      // M = 12, N = 13, O = 14
-      // R = 17 (FollowUp Count)
-      // S = 18 (Latest Remarks - Updated)
 
-      const status = row[14] ? row[14].trim() : "";         // Col O
-      const plannedDate = row[12] ? row[12].trim() : "";    // Col M
-      const actualDate = row[13] ? row[13].trim() : "";     // Col N
-      const followUpCountStr = row[17] ? row[17].trim() : "0"; // Col R
-      
-      const remarkL = row[11] ? row[11].trim() : "";        // Col L (Initial)
-      const remarkS = row[19] ? row[19].trim() : "";        // Col T (Latest)
+      // --- COLUMN MAPPING ---
+      // K [10] = Important Note
+      // ...
+      // R [17] = FollowUp Count
+      // S [18] = Pick and Drop (NEW)
+      // T [19] = Latest Remarks (SHIFTED)
 
-      // --- CONDITIONAL REMARKS LOGIC ---
+      const importantNote = row[10] ? row[10].trim() : "";
+      const status = row[14] ? row[14].trim() : "";
+      const plannedDate = row[12] ? row[12].trim() : "";
+      const actualDate = row[13] ? row[13].trim() : "";
+      const followUpCountStr = row[17] ? row[17].trim() : "0";
+
+      const pickAndDrop = row[18] ? row[18].trim() : "No"; // Read Col S
+
+      const remarkL = row[11] ? row[11].trim() : ""; // Initial Remark
+      const remarkT = row[19] ? row[19].trim() : ""; // Latest Remark (Col T)
+
+      // --- REMARKS LOGIC ---
       const countVal = parseInt(followUpCountStr) || 0;
       let finalRemarkToDisplay = "";
 
       if (countVal === 0) {
-        // Agar count 0 hai, toh Column L dikhao
-        finalRemarkToDisplay = remarkL;
+        finalRemarkToDisplay = remarkL; // Pehli baar L dikhao
       } else {
-        // Agar count > 0 hai, toh Column S dikhao
-        finalRemarkToDisplay = remarkS;
+        finalRemarkToDisplay = remarkT; // Uske baad T dikhao
       }
 
-      const statusLower = status.toLowerCase();
-      if (status === "" || statusLower === "no conversation") {
+
+      if (status === "" || status === "No conversation") {
         filteredLeads.push({
           rowIndex: index + 8,
           sheetName: sheetName,
@@ -90,11 +106,13 @@ async function getFilteredLeads(sheets, sheetName) {
           leadSource: row[6] || "",
           leadGenNumber: row[7] || "",
           leadGenName: row[8] || "",
+          importantNote: importantNote,
+          pickAndDrop: pickAndDrop, // Send to Frontend
           plannedDate: plannedDate,
           actualDate: actualDate,
           status: status || "Pending",
           followUpCount: countVal,
-          remarks: finalRemarkToDisplay, // Yahan conditional remark jayega
+          remarks: finalRemarkToDisplay,
         });
       }
     });
@@ -140,16 +158,14 @@ router.post("/nbdin/update", async (req, res) => {
       fieldVisitDate,
       nextFollowUpDate,
       currentFollowUpCount,
-      remarks, 
+      remarks,
+      pickAndDrop, // Frontend se "Yes" ya "No" aayega
     } = req.body;
 
-    console.log("📝 Updating NBDIN record:", { sheetName, rowIndex, status, remarks });
+    console.log("📝 Updating:", { sheetName, rowIndex, status, pickAndDrop, remarks });
 
     if (!sheetName || !rowIndex || !status) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing required fields",
-      });
+      return res.status(400).json({ success: false, error: "Missing required fields" });
     }
 
     const timestamp = new Date().toLocaleString("en-IN", {
@@ -160,7 +176,7 @@ router.post("/nbdin/update", async (req, res) => {
     const newFollowUpCount = (parseInt(currentFollowUpCount) || 0) + 1;
     const updates = [];
 
-    // --- WRITING LOGIC (Always write to Column S for new remarks) ---
+    // --- WRITING LOGIC ---
 
     // 1. Planned (Col M)
     let finalPlannedValue = "";
@@ -173,43 +189,42 @@ router.post("/nbdin/update", async (req, res) => {
     }
 
     // 2. Actual (Col N)
-    updates.push({
-      range: `'${sheetName}'!N${rowIndex}`,
-      values: [[timestamp]],
-    });
+    updates.push({ range: `'${sheetName}'!N${rowIndex}`, values: [[timestamp]] });
 
     // 3. Status (Col O)
-    updates.push({
-      range: `'${sheetName}'!O${rowIndex}`,
-      values: [[status]],
-    });
+    updates.push({ range: `'${sheetName}'!O${rowIndex}`, values: [[status]] });
 
     // 4. Field Visit (Col P)
     if (fieldVisitDate) {
-      updates.push({
-        range: `'${sheetName}'!P${rowIndex}`,
-        values: [[fieldVisitDate]],
-      });
+      updates.push({ range: `'${sheetName}'!P${rowIndex}`, values: [[fieldVisitDate]] });
     }
 
     // 5. Next FollowUp (Col Q)
     if (nextFollowUpDate) {
-      updates.push({
-        range: `'${sheetName}'!Q${rowIndex}`,
-        values: [[nextFollowUpDate]],
-      });
+      updates.push({ range: `'${sheetName}'!Q${rowIndex}`, values: [[nextFollowUpDate]] });
     }
 
     // 6. FollowUp Count (Col R)
-    updates.push({
-      range: `'${sheetName}'!R${rowIndex}`,
-      values: [[newFollowUpCount.toString()]],
-    });
+    updates.push({ range: `'${sheetName}'!R${rowIndex}`, values: [[newFollowUpCount.toString()]] });
 
-    // 7. REMARKS (Always update Col S)
-    if (remarks !== undefined) { 
+    // ==================================================
+    // 7. PICK AND DROP -> COLUMN S (Index 18)
+    // ==================================================
+    if (pickAndDrop) {
       updates.push({
         range: `'${sheetName}'!S${rowIndex}`,
+        values: [[pickAndDrop]],
+      });
+    }
+
+    // ==================================================
+    // 8. REMARKS -> COLUMN T (Index 19)
+    // ==================================================
+    // Ye check karein ki remarks empty bhi ho toh bhi update ho ya nahi.
+    // Usually undefined check kaafi hai.
+    if (remarks !== undefined) {
+      updates.push({
+        range: `'${sheetName}'!T${rowIndex}`, // Yahan T kar diya hai
         values: [[remarks]],
       });
     }
@@ -222,27 +237,13 @@ router.post("/nbdin/update", async (req, res) => {
       },
     });
 
-    console.log(`✅ Updated row ${rowIndex}. Count: ${newFollowUpCount}. Remarks logic handled.`);
-
     res.json({
       success: true,
       message: "Lead updated successfully",
-      data: {
-        sheetName,
-        rowIndex,
-        status,
-        remarks,
-        plannedDateTime: finalPlannedValue,
-      },
     });
   } catch (error) {
-    console.error("❌ Error updating NBD IN lead:", error.message);
-    res.status(500).json({
-      success: false,
-      error: "Failed to update lead",
-      message: error.message,
-    });
+    console.error("❌ Error updating:", error.message);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
-
 module.exports = router;

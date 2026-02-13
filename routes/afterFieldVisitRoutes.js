@@ -37,42 +37,55 @@ function formatDateToSheetStyle(dateInput) {
 }
 
 // --- READ DATA ROUTE ---
+// --- READ DATA ROUTE ---
+// --- READ DATA ROUTE ---
 router.get("/list", async (req, res) => {
   try {
     const getData = async (sheetName) => {
+      // Range A8 se AF tak fetch kar rahe hain
       const response = await req.sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `'${sheetName}'!A8:AF`, // Fetch up to Remarks
+        range: `'${sheetName}'!A8:AF`, 
       });
-
+      
       const rows = response.data.values || [];
       return rows
         .map((row, index) => {
-          // Mapping based on your structure
-          const plannedDate = row[25] ? row[25].trim() : ""; // Z
-          const actualDate = row[26] ? row[26].trim() : "";  // AA
-          const status = row[27] ? row[27].trim() : "";      // AB
+            // --- COLUMN MAPPING ---
+            // A=0, B=1, C=2, D=3, E=4, F=5, G=6 
+            // H=7 (Lead Gen No), I=8 (Lead Gen Name), K=10 (Important Note)
+            // Z=25 (Planned), AA=26 (Actual), AB=27 (Status), AE=30 (Count), AF=31 (Remarks)
+            
+            // Safe Access Function (Undefined ko handle karne ke liye)
+            const getCol = (idx) => (row[idx] ? String(row[idx]).trim() : "");
 
-          // Filter Logic
-          if ((plannedDate && !actualDate) || status === "No conversation") {
-            return {
-              rowIndex: index + 8,
-              sheetName: sheetName,
-              uniqueId: row[1] || "",
-              customerName: row[2] || "",
-              customerContact: row[3] || "",
-              interestedIn: row[4] || "",
-              projectSelection: row[5] || "",
-              leadSource: row[6] || "",
-              plannedDate: plannedDate,
-              status: status || "Pending",
-              followUpCount: row[30] || "0", // AE
-              remarks: row[31] || "",        // AF
-            };
-          }
-          return null;
+            const plannedDate = getCol(25); // Z
+            const actualDate = getCol(26);  // AA
+            const status = getCol(27);      // AB
+            
+            // Filter Logic
+            if ((plannedDate && !actualDate) || status === "No conversation") {
+              return {
+                rowIndex: index + 8,
+                sheetName: sheetName,
+                uniqueId: getCol(1),        // B
+                customerName: getCol(2),    // C
+                customerContact: getCol(3), // D
+                interestedIn: getCol(4),    // E
+                projectSelection: getCol(5),// F
+                leadSource: getCol(6),      // G
+                leadGenNumber: getCol(7),   // H (Lead Gen No)
+                leadGenName: getCol(8),     // I (Lead Gen Name)
+                importantNote: getCol(10),  // K (Important Note)
+                plannedDate: plannedDate,      
+                status: status || "Pending",
+                followUpCount: getCol(30) || "0", // AE
+                remarks: getCol(31),        // AF
+              };
+            }
+            return null;
         })
-        .filter(item => item !== null); // Remove nulls
+        .filter(item => item !== null);
     };
 
     const [endUserLeads, channelPartnerLeads] = await Promise.all([
@@ -81,16 +94,15 @@ router.get("/list", async (req, res) => {
     ]);
 
     let allLeads = [...endUserLeads, ...channelPartnerLeads];
-
-    // Sort logic safe check
+    
+    // Sort by Planned Date
     allLeads.sort((a, b) => {
-      // Custom date parser for DD/MM/YYYY to ensure sorting works
-      const parse = (d) => {
-        if (!d) return 0;
-        const p = d.split(/[\/\- :]/);
-        return new Date(p[2], p[1] - 1, p[0], p[3] || 0, p[4] || 0).getTime();
-      };
-      return parse(a.plannedDate) - parse(b.plannedDate);
+       const parse = (d) => {
+         if(!d) return 0;
+         const p = d.split(/[\/\- :]/); 
+         return new Date(p[2], p[1]-1, p[0], p[3]||0, p[4]||0).getTime();
+       };
+       return parse(a.plannedDate) - parse(b.plannedDate);
     });
 
     res.json({ success: true, data: allLeads });
@@ -101,7 +113,7 @@ router.get("/list", async (req, res) => {
   }
 });
 
-// --- UPDATE ROUTE (ROBUST VERSION) ---
+// --- UPDATE ROUTE ---
 router.post("/update", async (req, res) => {
   try {
     const { sheetName, rowIndex, status, remarks, rescheduleDate, dealMeetingDate } = req.body;
@@ -119,8 +131,15 @@ router.post("/update", async (req, res) => {
         spreadsheetId: SPREADSHEET_ID,
         range: `'${sheetName}'!AE${rowIndex}`,
       });
+
       if (countResponse.data.values && countResponse.data.values[0]) {
-        const val = countResponse.data.values[0][0];
+        let val = countResponse.data.values[0][0];
+
+        // FIX: Handle "600:00:00" time format issue
+        if (typeof val === 'string' && val.includes(':')) {
+          val = parseInt(val); // Convert string starting with number to integer
+        }
+
         currentCount = isNaN(parseInt(val)) ? 0 : parseInt(val);
       }
     } catch (err) {
@@ -187,7 +206,7 @@ router.post("/update", async (req, res) => {
         values: [[status]],
       });
 
-      // Update Deal Meeting Date (AC) - Optional check
+      // Update Deal Meeting Date (AC)
       if (dealMeetingDate) {
         const formattedDealDate = formatDateToSheetStyle(dealMeetingDate);
         updates.push({
@@ -208,11 +227,11 @@ router.post("/update", async (req, res) => {
       });
     }
 
-    console.log(`✅ Success: Updated Row ${rowIndex} in ${sheetName}`);
-    res.json({ success: true, message: "Update successful" });
+    console.log(`✅ Success: Updated Row ${rowIndex} in ${sheetName}. New Count: ${newCount}`);
+    res.json({ success: true, message: "Update successful", newFollowUpCount: newCount });
 
   } catch (error) {
-    console.error("❌ Update API Crash:", error); // Ye error server terminal me dekhein
+    console.error("❌ Update API Crash:", error);
     res.status(500).json({
       success: false,
       error: "Internal Server Error",

@@ -78,12 +78,6 @@ async function getFilteredLeads(sheets, sheetName) {
       const plannedDate = row[20] ? row[20].trim() : "";
       const actualDate = row[22] ? row[22].trim() : "";
       const status = row[23] ? row[23].trim() : "";
-      // =============================
-      // REMARKS LOGIC (T first, then Y)
-      // =============================
-
-      // T = index 19
-      // Y = index 24
       const remarkFromT = row[19] ? row[19].trim() : "";
       const remarkFromY = row[25] ? row[25].trim() : "";
 

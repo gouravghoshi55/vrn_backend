@@ -167,8 +167,7 @@ router.post("/update", async (req, res) => {
 
     // --- B. CONDITIONAL LOGIC ---
 
-    if (rescheduleDate) {
-      // === RESCHEDULE SCENARIO ===
+    if (rescheduleDate && (status === "No conversation" || status === "Next Follow Up")) {
       const formattedDate = formatDateToSheetStyle(rescheduleDate);
       console.log(`📅 Processing Reschedule: ${rescheduleDate} -> ${formattedDate}`);
 

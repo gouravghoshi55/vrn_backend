@@ -179,9 +179,17 @@ router.post("/nbdin/update", async (req, res) => {
     // --- WRITING LOGIC ---
 
     // 1. Planned (Col M)
+    // ==================================================
+    // 1. Planned (Col M)  -> No conversation OR Next Follow Up
+    // ==================================================
     let finalPlannedValue = "";
-    if (nextFollowUpDate) {
+
+    if (
+      (status === "No conversation" || status === "Next Follow Up") &&
+      nextFollowUpDate
+    ) {
       finalPlannedValue = getPlannedDateTime(nextFollowUpDate);
+
       updates.push({
         range: `'${sheetName}'!M${rowIndex}`,
         values: [[finalPlannedValue]],

@@ -32,7 +32,7 @@ function getPlannedDateTime(dateStr) {
   let formattedDate = dateStr;
   // Agar date YYYY-MM-DD format mein aayi hai toh usse DD/MM/YYYY convert karein
   if (dateStr.includes("-")) {
-    const parts = dateStr.split("-"); 
+    const parts = dateStr.split("-");
     if (parts[0].length === 4) {
       formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
@@ -57,12 +57,12 @@ async function getFilteredLeads(sheets, sheetName) {
     // Column AF (Index 31) tak data read kar rahe hain
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${sheetName}'!A8:AF`, 
+      range: `'${sheetName}'!A8:AF`,
     });
-    
+
     const rows = response.data.values || [];
     const filteredLeads = [];
-    
+
     rows.forEach((row, index) => {
       // --- COLUMN MAPPING ---
       // Z  = 25 (Planned)
@@ -75,7 +75,7 @@ async function getFilteredLeads(sheets, sheetName) {
       const plannedDate = row[25] ? row[25].trim() : "";
       const actualDate = row[26] ? row[26].trim() : "";
       const status = row[27] ? row[27].trim() : "";
-      const remarks = row[31] ? row[31].trim() : ""; 
+      const remarks = row[31] ? row[31].trim() : "";
 
       const isPendingVisit = plannedDate && !actualDate;
       const isNoConversation = status === "No conversation";
@@ -86,11 +86,16 @@ async function getFilteredLeads(sheets, sheetName) {
           sheetName: sheetName,
           uniqueId: row[1] || "",
           customerName: row[2] || "",
+          customerContact: row[3] || "",
+          interestedIn: row[4] || "",
+          projectSelection: row[5] || "",
+          leadSource: row[6] || "",
+          leadGenNumber: row[7] || "",
+          leadGenName: row[8] || "",
           plannedDate: plannedDate,
           status: status || "Pending",
-          remarks: remarks,
-          // Extra info agar frontend pe chahiye ho
-          followUpCount: row[30] || "0" 
+          remarks: currentRemarks, //
+          followUpCount: row[30] || "0"
         });
       }
     });
@@ -124,7 +129,7 @@ router.get("/list", async (req, res) => {
 // --- UPDATE ROUTE (FIXED LOGIC) ---
 router.post("/update", async (req, res) => {
   try {
-    const { sheetName, rowIndex, status, remarks, rescheduleDate } = req.body;
+    const { sheetName, rowIndex, status, remarks, rescheduleDate, dealMeetingDate } = req.body;
     console.log("📝 Updating Data:", { sheetName, rowIndex, status, rescheduleDate });
 
     if (!sheetName || !rowIndex) {
@@ -146,7 +151,7 @@ router.post("/update", async (req, res) => {
     const updates = [];
 
     // --- LOGIC: ALWAYS UPDATE COUNT & REMARKS ---
-    
+
     // 1. Update FollowUP Count (Column AE)
     updates.push({
       range: `'${sheetName}'!AE${rowIndex}`,
@@ -181,7 +186,7 @@ router.post("/update", async (req, res) => {
 
       // (Optional) Agar reschedule ho raha hai toh Status bhi update kar sakte hain
       if (status) {
-         updates.push({
+        updates.push({
           range: `'${sheetName}'!AB${rowIndex}`, // Column AB (Status)
           values: [[status]],
         });
@@ -202,6 +207,14 @@ router.post("/update", async (req, res) => {
         range: `'${sheetName}'!AB${rowIndex}`,
         values: [[status]],
       });
+
+      if (dealMeetingDate) {
+        const formattedDealDate = getFormattedDateTime(dealMeetingDate); // Helper use karein
+        updates.push({
+          range: `'${sheetName}'!AC${rowIndex}`, // Column AC according to screenshot
+          values: [[formattedDealDate]],
+        });
+      }
     }
 
     // Execute Batch Update

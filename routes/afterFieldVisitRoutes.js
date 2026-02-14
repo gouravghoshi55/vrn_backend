@@ -7,7 +7,6 @@ const SHEETS = {
   CHANNEL_PARTNER: "Channel Partener Lead FMS",
 };
 
-// --- HELPERS ---
 
 function getCurrentTimestamp() {
   const now = new Date();
@@ -116,7 +115,7 @@ router.post("/update", async (req, res) => {
   try {
     const { sheetName, rowIndex, status, remarks, rescheduleDate, dealMeetingDate } = req.body;
 
-    console.log("Update Payload:", req.body);
+    console.log("Update Payload:", JSON.stringify(req.body, null, 2));
 
     if (!sheetName || !rowIndex) {
       return res.status(400).json({ success: false, error: "Missing sheetName or rowIndex" });
@@ -126,67 +125,70 @@ router.post("/update", async (req, res) => {
     try {
       const countRes = await req.sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `'${sheetName}'!AF${rowIndex}`, // FollowUP Count = AF
+        range: `'${sheetName}'!AF${rowIndex}`,
       });
       const val = countRes.data.values?.[0]?.[0];
       currentCount = parseInt(val) || 0;
     } catch (e) {
-      console.warn("Could not read count", e.message);
+      console.warn("Could not read count:", e.message);
     }
 
     const newCount = currentCount + 1;
     const updates = [];
+    const timestamp = getCurrentTimestamp();
 
-    // Always increment count
+    // Always increment count (AF)
     updates.push({
       range: `'${sheetName}'!AF${rowIndex}`,
       values: [[newCount]],
     });
 
-    // Always update latest remarks (AG)
-    if (remarks !== undefined && remarks.trim()) {
+    // Always update remarks (AG) if provided
+    if (remarks && String(remarks).trim()) {
       updates.push({
         range: `'${sheetName}'!AG${rowIndex}`,
-        values: [[remarks.trim()]],
+        values: [[String(remarks).trim()]],
       });
     }
 
-    if (rescheduleDate && ["No conversation", "Next Follow Up"].includes(status)) {
+    // ── RESCHEDULE CASE ──
+    // Only trigger if rescheduleDate is non-empty and looks valid
+    if (rescheduleDate && String(rescheduleDate).trim() !== "" && ["No conversation", "Next Follow Up"].includes(status || "")) {
       const formatted = formatDateToSheetStyle(rescheduleDate);
+      console.log("Processing RESCHEDULE to:", formatted);
 
-      // Next FollowUP Date = AE
       updates.push({
-        range: `'${sheetName}'!AE${rowIndex}`,
+        range: `'${sheetName}'!AA${rowIndex}`,  // Planned
         values: [[formatted]],
       });
 
-      // Planned = AA
       updates.push({
-        range: `'${sheetName}'!AA${rowIndex}`,
+        range: `'${sheetName}'!AE${rowIndex}`,  // Next FollowUP Date
         values: [[formatted]],
       });
 
-      // Status = AC
       updates.push({
-        range: `'${sheetName}'!AC${rowIndex}`,
+        range: `'${sheetName}'!AC${rowIndex}`,  // Status
         values: [[status]],
       });
-    } else {
-      const timestamp = getCurrentTimestamp();
+    } 
+    // ── MARK DONE / NOT INTERESTED / OTHER STATUS ──
+    else {
+      console.log("Processing MARK DONE / STATUS UPDATE:", status);
 
-      // Actual = AB
+      // Write actual timestamp (AB) – this should now always happen for non-reschedule
       updates.push({
         range: `'${sheetName}'!AB${rowIndex}`,
         values: [[timestamp]],
       });
 
-      // Status = AC
+      // Status (AC)
+      let finalStatus = status || "Done";
       updates.push({
         range: `'${sheetName}'!AC${rowIndex}`,
-        values: [[status]],
+        values: [[finalStatus]],
       });
 
-      // Deal Meeting Date = AD (optional)
       if (dealMeetingDate) {
         const formattedDeal = formatDateToSheetStyle(dealMeetingDate);
         updates.push({
@@ -204,6 +206,9 @@ router.post("/update", async (req, res) => {
           data: updates,
         },
       });
+      console.log(`Updated ${updates.length} cells in row ${rowIndex}`);
+    } else {
+      console.log("No updates to perform");
     }
 
     res.json({ success: true, message: "Updated", newFollowUpCount: newCount });

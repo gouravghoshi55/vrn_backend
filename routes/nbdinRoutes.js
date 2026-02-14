@@ -80,7 +80,7 @@ async function getFilteredLeads(sheets, sheetName) {
 
       const pickAndDrop = row[18] ? row[18].trim() : "No"; // Read Col S
 
-      const remarkL = row[11] ? row[11].trim() : ""; // Initial Remark
+      const remarkL = row[10] ? row[10].trim() : ""; // Initial Remark
       const remarkT = row[19] ? row[19].trim() : ""; // Latest Remark (Col T)
 
       // --- REMARKS LOGIC ---
@@ -94,7 +94,7 @@ async function getFilteredLeads(sheets, sheetName) {
       }
 
 
-      if (status === "" || status === "No conversation") {
+      if (status === "" || status === "No conversation" || status === "Next Follow Up") {
         filteredLeads.push({
           rowIndex: index + 8,
           sheetName: sheetName,

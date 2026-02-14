@@ -66,8 +66,8 @@ async function getFilteredLeads(sheets, sheetName) {
     rows.forEach((row, index) => {
       const importantNote = row[10] ? row[10].trim() : "";
       const plannedDate = row[20] ? row[20].trim() : "";
-      const actualDate = row[22] ? row[22].trim() : "";
-      const status = row[23] ? row[23].trim() : "";
+      const actualDate = row[21] ? row[21].trim() : "";
+      const status = row[22] ? row[22].trim() : "";
       const remarkFromT = row[19] ? row[19].trim() : "";
       const remarkFromY = row[25] ? row[25].trim() : "";
       let finalRemarks = "";
@@ -80,7 +80,7 @@ async function getFilteredLeads(sheets, sheetName) {
         finalRemarks = remarkFromY;
       }
       // Filter: Planned exists AND Actual empty
-      if (plannedDate && !actualDate) {
+      if ((status === "" || status === "Rescheduled")) {
         filteredLeads.push({
           rowIndex: index + 8,
           sheetName: sheetName,
@@ -150,21 +150,21 @@ router.post("/update", async (req, res) => {
     const timestamp = getCurrentTimestamp();
 
     if (rescheduleDate) {
-      // RESCHEDULE
+      // RESCHEDULE – planned date override hota hai
       const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
       updates.push({
         range: `'${sheetName}'!U${rowIndex}`,
         values: [[newPlannedDateTime]],
       });
-      // Optional: Status ko "Rescheduled" kar sakte ho
+      // Optional: Status "Rescheduled" set kar sakte ho
       updates.push({
         range: `'${sheetName}'!W${rowIndex}`,
         values: [["Rescheduled"]],
       });
-    } 
+    }
     else if (status === "Not Interested") {
-      // NOT INTERESTED – naya case
-      // 1. Actual timestamp daal do (visit close)
+      // NOT INTERESTED – planned date ko touch nahi karenge
+      // 1. Actual timestamp daal do (visit close record ke liye)
       updates.push({
         range: `'${sheetName}'!U${rowIndex}`,
         values: [[timestamp]],
@@ -176,12 +176,8 @@ router.post("/update", async (req, res) => {
         values: [["Not Interested"]],
       });
 
-      // 3. Planned clear kar do taaki list se hat jaye
-      updates.push({
-        range: `'${sheetName}'!U${rowIndex}`,
-        values: [[""]],  // blank kar diya
-      });
-    } 
+      // → Planned date (U) ko bilkul change nahi kar rahe → override nahi hoga
+    }
     else {
       // MARK DONE / OTHER STATUS
       updates.push({
@@ -218,8 +214,8 @@ router.post("/update", async (req, res) => {
       message: rescheduleDate
         ? "Visit Rescheduled successfully"
         : status === "Not Interested"
-        ? "Marked as Not Interested"
-        : "Field Visit marked as Done",
+          ? "Marked as Not Interested"
+          : "Field Visit marked as Done",
     });
   } catch (error) {
     console.error("❌ Error updating:", error.message);

@@ -68,10 +68,10 @@ async function getFilteredLeads(sheets, sheetName) {
 
   rows.forEach((row, index) => {
     // 0-based indices
-    const plannedDate = row[32] ? row[32].trim() : "";   // AG → index 32 (A=0, B=1, ..., AG=32)
-    const actualDate = row[33] ? row[33].trim() : "";  // AH → index 33
-    let status = row[34] ? row[34].trim() : "";  // AI → index 34
-    const previousRemarks = row[31] ? row[31].trim() : ""; // AE or wherever previous remarks are
+    const plannedDate = row[33] ? row[33].trim() : "";   // AG → index 32 (A=0, B=1, ..., AG=32)
+    const actualDate = row[34] ? row[34].trim() : "";  // AH → index 33
+    let status = row[35] ? row[35].trim() : "";  // AI → index 34
+    const previousRemarks = row[32] ? row[32].trim() : ""; // AE or wherever previous remarks are
 
     // Show if planned exists AND it's not a final completed status
     const completedStatuses = ["Done", "Visit Done", "Completed", "Failed", "Cancelled", "Rejected"];

@@ -59,9 +59,9 @@ router.get("/list", async (req, res) => {
             // Safe Access Function (Undefined ko handle karne ke liye)
             const getCol = (idx) => (row[idx] ? String(row[idx]).trim() : "");
 
-            const plannedDate = getCol(25); // Z
-            const actualDate = getCol(26);  // AA
-            const status = getCol(27);      // AB
+            const plannedDate = getCol(26); // Z
+            const actualDate = getCol(27);  // AA
+            const status = getCol(28);      // AB
             
             // Filter Logic
             if ((plannedDate && !actualDate) || status === "No conversation") {
@@ -79,8 +79,8 @@ router.get("/list", async (req, res) => {
                 importantNote: getCol(10),  // K (Important Note)
                 plannedDate: plannedDate,      
                 status: status || "Pending",
-                followUpCount: getCol(30) || "0", // AE
-                remarks: getCol(31),        // AF
+                followUpCount: getCol(31) || "0", // AE
+                remarks: getCol(32),        // AF
               };
             }
             return null;

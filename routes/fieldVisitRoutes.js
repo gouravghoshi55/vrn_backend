@@ -147,48 +147,78 @@ router.post("/update", async (req, res) => {
     }
 
     const updates = [];
+    const timestamp = getCurrentTimestamp();
 
-    // RESCHEDULE
     if (rescheduleDate) {
+      // RESCHEDULE
       const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
       updates.push({
-        range: `'${sheetName}'!U${rowIndex}`,   // ← Changed from T → U
+        range: `'${sheetName}'!U${rowIndex}`,
         values: [[newPlannedDateTime]],
       });
-    }
-    // MARK DONE
-    else {
-      const timestamp = getCurrentTimestamp();
+      // Optional: Status ko "Rescheduled" kar sakte ho
       updates.push({
-        range: `'${sheetName}'!U${rowIndex}`,   // Actual visit time
+        range: `'${sheetName}'!W${rowIndex}`,
+        values: [["Rescheduled"]],
+      });
+    } 
+    else if (status === "Not Interested") {
+      // NOT INTERESTED – naya case
+      // 1. Actual timestamp daal do (visit close)
+      updates.push({
+        range: `'${sheetName}'!U${rowIndex}`,
+        values: [[timestamp]],
+      });
+
+      // 2. Status update
+      updates.push({
+        range: `'${sheetName}'!W${rowIndex}`,
+        values: [["Not Interested"]],
+      });
+
+      // 3. Planned clear kar do taaki list se hat jaye
+      updates.push({
+        range: `'${sheetName}'!U${rowIndex}`,
+        values: [[""]],  // blank kar diya
+      });
+    } 
+    else {
+      // MARK DONE / OTHER STATUS
+      updates.push({
+        range: `'${sheetName}'!U${rowIndex}`,
         values: [[timestamp]],
       });
       updates.push({
-        range: `'${sheetName}'!W${rowIndex}`,   // Status
-        values: [[status]],
+        range: `'${sheetName}'!W${rowIndex}`,
+        values: [[status || "Done"]],
       });
     }
 
-    // UPDATE REMARKS → COLUMN Y
-    if (remarks !== undefined) {
+    // REMARKS – hamesha update (column Y)
+    if (remarks !== undefined && remarks.trim() !== "") {
       updates.push({
         range: `'${sheetName}'!Y${rowIndex}`,
-        values: [[remarks]],
+        values: [[remarks.trim()]],
       });
     }
 
-    await req.sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: SPREADSHEET_ID,
-      requestBody: {
-        valueInputOption: "USER_ENTERED",
-        data: updates,
-      },
-    });
+    // Batch update
+    if (updates.length > 0) {
+      await req.sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          valueInputOption: "USER_ENTERED",
+          data: updates,
+        },
+      });
+    }
 
     res.json({
       success: true,
       message: rescheduleDate
         ? "Visit Rescheduled successfully"
+        : status === "Not Interested"
+        ? "Marked as Not Interested"
         : "Field Visit marked as Done",
     });
   } catch (error) {

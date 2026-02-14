@@ -54,33 +54,33 @@ function parseDate(dateStr) {
 }
 
 // ============================================
-// FETCH LIST - Shows Pending + Rescheduled rows
+// FETCH LIST - Only show when Status is empty or "Rescheduled"
 // ============================================
 
 async function getFilteredLeads(sheets, sheetName) {
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${sheetName}'!A8:AK`,  // extended to AK to be safe
+    range: `'${sheetName}'!A8:AL`,  // Extended to AL (column 38)
   });
 
   const rows = response.data.values || [];
   const filtered = [];
 
   rows.forEach((row, index) => {
-    // 0-based indices
-    const plannedDate = row[33] ? row[33].trim() : "";   // AG → index 32 (A=0, B=1, ..., AG=32)
-    const actualDate = row[34] ? row[34].trim() : "";  // AH → index 33
-    let status = row[35] ? row[35].trim() : "";  // AI → index 34
-    const previousRemarks = row[32] ? row[32].trim() : ""; // AE or wherever previous remarks are
+    // Correct 0-based indices as per your latest sheet
+    const plannedDate = row[33] ? row[33].trim() : "";   // AH → Planned (column 34)
+    const actualDate = row[34] ? row[34].trim() : "";   // AI → Actual (column 35)
+    let status = row[35] ? row[35].trim() : "";   // AJ → Status (column 36)
+    const previousRemarks = row[37] ? row[37].trim() : ""; // AL → Remarks (latest) – fallback
 
-    // Show if planned exists AND it's not a final completed status
-    const completedStatuses = ["Done", "Visit Done", "Completed", "Failed", "Cancelled", "Rejected"];
-    const isCompleted = completedStatuses.some(s =>
-      status.toLowerCase().includes(s.toLowerCase())
-    );
+    // Show ONLY if:
+    // - Planned date exists
+    // - AND status is empty OR exactly "Rescheduled" (case-insensitive)
+    const showRow = plannedDate &&
+      (!status || status.trim().toLowerCase() === "rescheduled");
 
-    if (plannedDate && !isCompleted) {
-      // Normalize empty status to Pending
+    if (showRow) {
+      // Normalize empty status to "Pending"
       if (!status.trim()) status = "Pending";
 
       filtered.push({
@@ -96,7 +96,7 @@ async function getFilteredLeads(sheets, sheetName) {
         leadGenName: row[8] || "",
         plannedDate,
         status,
-        remarks: previousRemarks,
+        remarks: previousRemarks,  // AL ya jo bhi latest remarks hai
       });
     }
   });
@@ -138,6 +138,8 @@ router.post("/update", async (req, res) => {
   try {
     const { sheetName, rowIndex, status, rescheduleDate, remarks } = req.body;
 
+    console.log("Update Payload:", req.body);
+
     if (!sheetName || !rowIndex) {
       return res.status(400).json({
         success: false,
@@ -151,35 +153,35 @@ router.post("/update", async (req, res) => {
     if (rescheduleDate) {
       const newPlanned = getPlannedDateTime(rescheduleDate);
 
-      // Planned → AG
+      // Planned → AH
       updates.push({
-        range: `'${sheetName}'!AG${rowIndex}`,
+        range: `'${sheetName}'!AH${rowIndex}`,
         values: [[newPlanned]],
       });
 
-      // Status → AI
+      // Status → AJ = "Rescheduled"
       updates.push({
-        range: `'${sheetName}'!AI${rowIndex}`,
+        range: `'${sheetName}'!AJ${rowIndex}`,
         values: [["Rescheduled"]],
       });
     } else {
-      // Actual → AH
+      // Actual → AI
       updates.push({
-        range: `'${sheetName}'!AH${rowIndex}`,
+        range: `'${sheetName}'!AI${rowIndex}`,
         values: [[timestamp]],
       });
 
-      // Status → AI
+      // Status → AJ
       updates.push({
-        range: `'${sheetName}'!AI${rowIndex}`,
+        range: `'${sheetName}'!AJ${rowIndex}`,
         values: [[status || "Done"]],
       });
     }
 
-    // Remarks → AK (only if provided and not empty)
+    // Remarks → AL (only if provided and not empty)
     if (remarks !== undefined && remarks.trim() !== "") {
       updates.push({
-        range: `'${sheetName}'!AK${rowIndex}`,
+        range: `'${sheetName}'!AL${rowIndex}`,
         values: [[remarks.trim()]],
       });
     }

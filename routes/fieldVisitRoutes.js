@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+
 const SHEETS = {
   END_USER: "END USER LEADS FMS",
   CHANNEL_PARTNER: "Channel Partener Lead FMS",
@@ -20,7 +21,6 @@ function getCurrentTimestamp() {
   return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 
-// Handles "YYYY-MM-DD" and "YYYY-MM-DDTHH:mm"
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
   if (dateStr.includes("T")) {
@@ -53,13 +53,13 @@ function parseDate(dateStr) {
 }
 
 // ======================================================
-// READ DATA
+// READ DATA (Filter: show only when status is empty or "Rescheduled")
 // ======================================================
 async function getFilteredLeads(sheets, sheetName) {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${sheetName}'!A8:X`,
+      range: `'${sheetName}'!A8:AA`,
     });
     const rows = response.data.values || [];
     const filteredLeads = [];
@@ -71,16 +71,16 @@ async function getFilteredLeads(sheets, sheetName) {
       const remarkFromT = row[19] ? row[19].trim() : "";
       const remarkFromY = row[25] ? row[25].trim() : "";
       let finalRemarks = "";
-      // First priority -> T
       if (remarkFromT) {
         finalRemarks = remarkFromT;
-      }
-      // If T empty -> Y
-      else if (remarkFromY) {
+      } else if (remarkFromY) {
         finalRemarks = remarkFromY;
       }
-      // Filter: Planned exists AND Actual empty
-      if ((status === "" || status === "Rescheduled")) {
+
+      // Show only if status is empty or "Rescheduled" (case-insensitive)
+      const showRow = !status || status.trim().toLowerCase() === "rescheduled";
+
+      if (showRow && plannedDate) {
         filteredLeads.push({
           rowIndex: index + 8,
           sheetName: sheetName,
@@ -96,6 +96,9 @@ async function getFilteredLeads(sheets, sheetName) {
           plannedDate: plannedDate,
           status: status || "Pending",
           remarks: finalRemarks,
+
+          // Yeh line add kar do – ab frontend ko followupCount milega
+          followupCount: row[25] ? parseInt(row[25].trim(), 10) || 0 : 0,
         });
       }
     });
@@ -107,7 +110,7 @@ async function getFilteredLeads(sheets, sheetName) {
 }
 
 // ======================================================
-// ROUTES
+// ROUTES - GET /list
 // ======================================================
 router.get("/list", async (req, res) => {
   try {
@@ -132,54 +135,72 @@ router.get("/list", async (req, res) => {
 });
 
 // ======================================================
-// UPDATE
+// UPDATE - POST /update
 // ======================================================
-
 router.post("/update", async (req, res) => {
   try {
     const { sheetName, rowIndex, status, remarks, rescheduleDate } = req.body;
-    console.log("📝 Updating:", { sheetName, rowIndex, status, rescheduleDate });
+    console.log("📝 Update Request:", { sheetName, rowIndex, status, rescheduleDate, remarks });
 
     if (!sheetName || !rowIndex) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Missing required fields" });
+      return res.status(400).json({ success: false, error: "Missing sheetName or rowIndex" });
     }
 
     const updates = [];
     const timestamp = getCurrentTimestamp();
 
-    if (rescheduleDate) {
-      // RESCHEDULE – planned date override hota hai
+    // === Fetch current Followup Count from Z ===
+    let currentFollowupCount = 0;
+    try {
+      const countResponse = await req.sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `'${sheetName}'!Z${rowIndex}`,
+      });
+
+      const val = countResponse.data.values?.[0]?.[0];
+      // Handle possible string formats like "5" or "5.0" or even time-like strings
+      currentFollowupCount = val ? parseInt(String(val).trim(), 10) || 0 : 0;
+      console.log(`Current Followup Count (Z${rowIndex}): ${currentFollowupCount}`);
+    } catch (e) {
+      console.warn(`⚠️ Could not read followup count from Z${rowIndex}:`, e.message);
+      // Continue with 0 if read fails
+    }
+
+    const newFollowupCount = currentFollowupCount + 1;
+
+    // === Always increment Followup Count in Z on EVERY update ===
+    updates.push({
+      range: `'${sheetName}'!Z${rowIndex}`,
+      values: [[newFollowupCount]],
+    });
+
+    // === Main update logic ===
+    if (rescheduleDate && String(rescheduleDate).trim() !== "") {
+      // RESCHEDULE
+      console.log("→ Processing RESCHEDULE");
       const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
       updates.push({
         range: `'${sheetName}'!U${rowIndex}`,
         values: [[newPlannedDateTime]],
       });
-      // Optional: Status "Rescheduled" set kar sakte ho
       updates.push({
         range: `'${sheetName}'!W${rowIndex}`,
         values: [["Rescheduled"]],
       });
-    }
-    else if (status === "Not Interested") {
-      // NOT INTERESTED – planned date ko touch nahi karenge
-      // 1. Actual timestamp daal do (visit close record ke liye)
+    } else if (status === "Not Interested") {
+      // NOT INTERESTED
+      console.log("→ Processing NOT INTERESTED");
       updates.push({
         range: `'${sheetName}'!U${rowIndex}`,
         values: [[timestamp]],
       });
-
-      // 2. Status update
       updates.push({
         range: `'${sheetName}'!W${rowIndex}`,
         values: [["Not Interested"]],
       });
-
-      // → Planned date (U) ko bilkul change nahi kar rahe → override nahi hoga
-    }
-    else {
-      // MARK DONE / OTHER STATUS
+    } else {
+      // MARK DONE or any other status
+      console.log("→ Processing DONE / STATUS UPDATE:", status || "Done");
       updates.push({
         range: `'${sheetName}'!U${rowIndex}`,
         values: [[timestamp]],
@@ -190,15 +211,16 @@ router.post("/update", async (req, res) => {
       });
     }
 
-    // REMARKS – hamesha update (column Y)
-    if (remarks !== undefined && remarks.trim() !== "") {
+    // === Remarks (Y column) ===
+    if (remarks && String(remarks).trim() !== "") {
+      console.log("→ Updating remarks");
       updates.push({
         range: `'${sheetName}'!Y${rowIndex}`,
-        values: [[remarks.trim()]],
+        values: [[String(remarks).trim()]],
       });
     }
 
-    // Batch update
+    // === Execute batch update ===
     if (updates.length > 0) {
       await req.sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
@@ -207,6 +229,9 @@ router.post("/update", async (req, res) => {
           data: updates,
         },
       });
+      console.log(`✅ Success: Row ${rowIndex} updated | New Followup Count = ${newFollowupCount}`);
+    } else {
+      console.log("No updates performed");
     }
 
     res.json({
@@ -216,9 +241,10 @@ router.post("/update", async (req, res) => {
         : status === "Not Interested"
           ? "Marked as Not Interested"
           : "Field Visit marked as Done",
+      newFollowupCount: newFollowupCount, // Frontend ko bata rahe hain
     });
   } catch (error) {
-    console.error("❌ Error updating:", error.message);
+    console.error("❌ Update failed:", error.message);
     res.status(500).json({
       success: false,
       error: "Failed to update lead",

@@ -138,51 +138,88 @@ router.post("/update", async (req, res) => {
   try {
     const { sheetName, rowIndex, status, rescheduleDate, remarks } = req.body;
 
-    console.log("Update Payload:", req.body);
+    console.log("Update Payload:", { sheetName, rowIndex, status, rescheduleDate, remarks });
 
     if (!sheetName || !rowIndex) {
-      return res.status(400).json({
-        success: false,
-        error: "sheetName and rowIndex are required",
-      });
+      return res.status(400).json({ success: false, error: "Missing sheetName or rowIndex" });
     }
 
     const timestamp = getCurrentTimestamp();
     const updates = [];
 
-    if (rescheduleDate) {
-      const newPlanned = getPlannedDateTime(rescheduleDate);
+    // Fetch current Followup Count from Z (har update par +1)
+    let currentFollowupCount = 0;
+    try {
+      const countRes = await req.sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `'${sheetName}'!Z${rowIndex}`,
+      });
+      const val = countRes.data.values?.[0]?.[0];
+      currentFollowupCount = val ? parseInt(String(val).trim(), 10) || 0 : 0;
+    } catch (e) {
+      console.warn("Could not read followup count:", e.message);
+    }
+    const newFollowupCount = currentFollowupCount + 1;
 
-      // Planned → AH
+    // Always increment Followup Count (Z)
+    updates.push({
+      range: `'${sheetName}'!Z${rowIndex}`,
+      values: [[newFollowupCount]],
+    });
+
+    // Main logic
+    if (rescheduleDate && String(rescheduleDate).trim() !== "") {
+      // RESCHEDULE
+      const newPlanned = getPlannedDateTime(rescheduleDate);
       updates.push({
-        range: `'${sheetName}'!AH${rowIndex}`,
+        range: `'${sheetName}'!AH${rowIndex}`,  // Planned
         values: [[newPlanned]],
       });
-
-      // Status → AJ = "Rescheduled"
       updates.push({
-        range: `'${sheetName}'!AJ${rowIndex}`,
+        range: `'${sheetName}'!AJ${rowIndex}`,  // Status
         values: [["Rescheduled"]],
       });
-    } else {
-      // Actual → AI
+    } 
+    else if (["Not Interested", "Negotiation Failed", "Deal Not Done"].includes(status)) {
+      // NEW: Negotiation Failed / Deal Not Done / Not Interested
+      console.log(`→ Processing FINAL CLOSE: ${status}`);
+
+      // Actual timestamp (AI)
       updates.push({
         range: `'${sheetName}'!AI${rowIndex}`,
         values: [[timestamp]],
       });
 
-      // Status → AJ
+      // Status (AJ)
+      updates.push({
+        range: `'${sheetName}'!AJ${rowIndex}`,
+        values: [[status]],
+      });
+
+      // Optional: Planned date clear kar do taaki list se hat jaye
+      // Agar chahte ho to yeh line comment kar dena
+      updates.push({
+        range: `'${sheetName}'!AH${rowIndex}`,
+        values: [[""]],
+      });
+    } 
+    else {
+      // MARK DONE or other
+      updates.push({
+        range: `'${sheetName}'!AI${rowIndex}`,
+        values: [[timestamp]],
+      });
       updates.push({
         range: `'${sheetName}'!AJ${rowIndex}`,
         values: [[status || "Done"]],
       });
     }
 
-    // Remarks → AL (only if provided and not empty)
-    if (remarks !== undefined && remarks.trim() !== "") {
+    // Remarks (AL)
+    if (remarks && String(remarks).trim() !== "") {
       updates.push({
         range: `'${sheetName}'!AL${rowIndex}`,
-        values: [[remarks.trim()]],
+        values: [[String(remarks).trim()]],
       });
     }
 
@@ -196,7 +233,12 @@ router.post("/update", async (req, res) => {
 
     res.json({
       success: true,
-      message: rescheduleDate ? "Rescheduled Successfully" : "Updated Successfully",
+      message: rescheduleDate 
+        ? "Rescheduled Successfully" 
+        : ["Not Interested", "Negotiation Failed", "Deal Not Done"].includes(status)
+          ? "Marked as " + status
+          : "Updated Successfully",
+      newFollowupCount: newFollowupCount,
     });
   } catch (err) {
     console.error("Update failed:", err);

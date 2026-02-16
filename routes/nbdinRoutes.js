@@ -19,7 +19,6 @@ function parseDate(dateStr) {
   return new Date(dateStr);
 }
 
-// Generates "DD/MM/YYYY HH:mm:ss" using current time + selected date
 // Generates "DD/MM/YYYY HH:mm:ss"
 // Handles both "YYYY-MM-DD" (adds current time) AND "YYYY-MM-DDTHH:mm" (uses selected time)
 function getPlannedDateTime(dateStr) {
@@ -67,6 +66,7 @@ async function getFilteredLeads(sheets, sheetName) {
 
       // --- COLUMN MAPPING ---
       // K [10] = Important Note
+      // L [11] = OLD REMARKS (Initial/Old Remarks)
       // ...
       // R [17] = FollowUp Count
       // S [18] = Pick and Drop (NEW)
@@ -80,19 +80,18 @@ async function getFilteredLeads(sheets, sheetName) {
 
       const pickAndDrop = row[18] ? row[18].trim() : "No"; // Read Col S
 
-      const remarkL = row[10] ? row[10].trim() : ""; // Initial Remark
-      const remarkT = row[19] ? row[19].trim() : ""; // Latest Remark (Col T)
+      const oldRemarkL = row[11] ? row[11].trim() : ""; // OLD Remark (Column L)
+      const latestRemarkT = row[19] ? row[19].trim() : ""; // Latest Remark (Col T)
 
       // --- REMARKS LOGIC ---
       const countVal = parseInt(followUpCountStr) || 0;
       let finalRemarkToDisplay = "";
 
       if (countVal === 0) {
-        finalRemarkToDisplay = remarkL; // Pehli baar L dikhao
+        finalRemarkToDisplay = oldRemarkL; // Pehli baar L dikhao
       } else {
-        finalRemarkToDisplay = remarkT; // Uske baad T dikhao
+        finalRemarkToDisplay = latestRemarkT; // Uske baad T dikhao
       }
-
 
       if (status === "" || status === "No conversation" || status === "Next Follow Up") {
         filteredLeads.push({
@@ -113,6 +112,7 @@ async function getFilteredLeads(sheets, sheetName) {
           status: status || "Pending",
           followUpCount: countVal,
           remarks: finalRemarkToDisplay,
+          oldRemarks: oldRemarkL, // ✅ OLD REMARKS bhej rahe hain frontend pe
         });
       }
     });

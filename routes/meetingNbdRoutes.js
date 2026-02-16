@@ -67,11 +67,23 @@ async function getFilteredLeads(sheets, sheetName) {
   const filtered = [];
 
   rows.forEach((row, index) => {
-    // Correct 0-based indices as per your latest sheet
-    const plannedDate = row[33] ? row[33].trim() : "";   // AH → Planned (column 34)
-    const actualDate = row[34] ? row[34].trim() : "";   // AI → Actual (column 35)
-    let status = row[35] ? row[35].trim() : "";   // AJ → Status (column 36)
-    const previousRemarks = row[37] ? row[37].trim() : ""; // AL → Remarks (latest) – fallback
+    // Column mappings (0-based indices)
+    const plannedDate = row[33] ? row[33].trim() : "";         // AH → Planned (column 34)
+    const actualDate = row[34] ? row[34].trim() : "";          // AI → Actual (column 35)
+    let status = row[35] ? row[35].trim() : "";                // AJ → Status (column 36)
+    
+    // ===== ALL REMARKS COLUMNS =====
+    const oldRemarks = row[11] ? row[11].trim() : "";          // L - Initial/Oldest Remarks
+    const previousRemarksDate = row[13] ? row[13].trim() : ""; // N - Date for T remarks
+    const previousRemarks = row[19] ? row[19].trim() : "";     // T - Previous Remarks
+    const latestOldRemarksDate = row[21] ? row[21].trim() : "";// V - Date for Y remarks
+    const latestOldRemarks = row[24] ? row[24].trim() : "";    // Y - Latest Old Remarks
+    const recentRemarksDate = row[27] ? row[27].trim() : "";   // AB - Date for AG remarks
+    const recentRemarks = row[32] ? row[32].trim() : "";       // AG - Recent Remarks
+    const currentRemarks = row[37] ? row[37].trim() : "";      // AL - Current/New Remarks
+    
+    // Display priority for table: AL > AG > Y > T > L
+    let displayRemarks = currentRemarks || recentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
 
     // Show ONLY if:
     // - Planned date exists
@@ -96,7 +108,16 @@ async function getFilteredLeads(sheets, sheetName) {
         leadGenName: row[8] || "",
         plannedDate,
         status,
-        remarks: previousRemarks,  // AL ya jo bhi latest remarks hai
+        
+        // ===== SEND ALL REMARKS TO FRONTEND =====
+        remarks: displayRemarks,                      // For table display
+        oldRemarks: oldRemarks,                       // L - Initial remarks (read-only)
+        previousRemarks: previousRemarks,             // T - Previous remarks (read-only)
+        previousRemarksDate: previousRemarksDate,     // N - Date for T
+        latestOldRemarks: latestOldRemarks,          // Y - Latest old remarks (read-only)
+        latestOldRemarksDate: latestOldRemarksDate,  // V - Date for Y
+        recentRemarks: recentRemarks,                // AG - Recent remarks (read-only)
+        recentRemarksDate: recentRemarksDate,        // AB - Date for AG
       });
     }
   });
@@ -215,10 +236,10 @@ router.post("/update", async (req, res) => {
       });
     }
 
-    // Remarks (AL)
+    // ===== NEW REMARKS SAVE TO COLUMN AL =====
     if (remarks && String(remarks).trim() !== "") {
       updates.push({
-        range: `'${sheetName}'!AL${rowIndex}`,
+        range: `'${sheetName}'!AL${rowIndex}`,  // New remarks save to AL
         values: [[String(remarks).trim()]],
       });
     }

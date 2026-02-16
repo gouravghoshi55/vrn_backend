@@ -63,18 +63,28 @@ async function getFilteredLeads(sheets, sheetName) {
     });
     const rows = response.data.values || [];
     const filteredLeads = [];
+    
     rows.forEach((row, index) => {
-      const importantNote = row[10] ? row[10].trim() : "";
-      const plannedDate = row[20] ? row[20].trim() : "";
-      const actualDate = row[21] ? row[21].trim() : "";
-      const status = row[22] ? row[22].trim() : "";
-      const remarkFromT = row[19] ? row[19].trim() : "";
-      const remarkFromY = row[25] ? row[25].trim() : "";
-      let finalRemarks = "";
-      if (remarkFromT) {
-        finalRemarks = remarkFromT;
-      } else if (remarkFromY) {
-        finalRemarks = remarkFromY;
+      const importantNote = row[10] ? row[10].trim() : "";     // K
+      const plannedDate = row[20] ? row[20].trim() : "";       // U
+      const actualDate = row[21] ? row[21].trim() : "";        // V
+      const status = row[22] ? row[22].trim() : "";            // W
+      
+      // ===== REMARKS COLUMNS =====
+      const oldRemarks = row[11] ? row[11].trim() : "";        // L - Initial/Old Remarks
+      const previousRemarksDate = row[13] ? row[13].trim() : ""; // N - Actual Date for T remarks
+      const previousRemarks = row[19] ? row[19].trim() : "";   // T - Previous Remarks
+      const latestRemarks = row[24] ? row[24].trim() : "";     // Y - Latest/New Remarks
+      const followupCount = row[25] ? parseInt(row[25].trim(), 10) || 0 : 0; // Z - Followup Count
+
+      // Display logic for table: Y > T > L (priority)
+      let displayRemarks = "";
+      if (latestRemarks) {
+        displayRemarks = latestRemarks;
+      } else if (previousRemarks) {
+        displayRemarks = previousRemarks;
+      } else if (oldRemarks) {
+        displayRemarks = oldRemarks;
       }
 
       // Show only if status is empty or "Rescheduled" (case-insensitive)
@@ -95,10 +105,13 @@ async function getFilteredLeads(sheets, sheetName) {
           importantNote: importantNote,
           plannedDate: plannedDate,
           status: status || "Pending",
-          remarks: finalRemarks,
-
-          // Yeh line add kar do – ab frontend ko followupCount milega
-          followupCount: row[25] ? parseInt(row[25].trim(), 10) || 0 : 0,
+          followupCount: followupCount,
+          
+          // ===== REMARKS - SEND ALL TO FRONTEND =====
+          remarks: displayRemarks,                    // For table display
+          oldRemarks: oldRemarks,                     // L - Read-only in modal
+          previousRemarks: previousRemarks,           // T - Read-only in modal
+          previousRemarksDate: previousRemarksDate,   // N - Date for T remarks
         });
       }
     });
@@ -158,12 +171,10 @@ router.post("/update", async (req, res) => {
       });
 
       const val = countResponse.data.values?.[0]?.[0];
-      // Handle possible string formats like "5" or "5.0" or even time-like strings
       currentFollowupCount = val ? parseInt(String(val).trim(), 10) || 0 : 0;
       console.log(`Current Followup Count (Z${rowIndex}): ${currentFollowupCount}`);
     } catch (e) {
       console.warn(`⚠️ Could not read followup count from Z${rowIndex}:`, e.message);
-      // Continue with 0 if read fails
     }
 
     const newFollowupCount = currentFollowupCount + 1;
@@ -191,7 +202,7 @@ router.post("/update", async (req, res) => {
       // NOT INTERESTED
       console.log("→ Processing NOT INTERESTED");
       updates.push({
-        range: `'${sheetName}'!U${rowIndex}`,
+        range: `'${sheetName}'!V${rowIndex}`,  // Actual Date in V
         values: [[timestamp]],
       });
       updates.push({
@@ -202,7 +213,7 @@ router.post("/update", async (req, res) => {
       // MARK DONE or any other status
       console.log("→ Processing DONE / STATUS UPDATE:", status || "Done");
       updates.push({
-        range: `'${sheetName}'!U${rowIndex}`,
+        range: `'${sheetName}'!V${rowIndex}`,  // Actual Date in V
         values: [[timestamp]],
       });
       updates.push({
@@ -211,9 +222,9 @@ router.post("/update", async (req, res) => {
       });
     }
 
-    // === Remarks (Y column) ===
+    // === Remarks (Y column - index 24) ===
     if (remarks && String(remarks).trim() !== "") {
-      console.log("→ Updating remarks");
+      console.log("→ Updating remarks in Column Y");
       updates.push({
         range: `'${sheetName}'!Y${rowIndex}`,
         values: [[String(remarks).trim()]],
@@ -241,7 +252,7 @@ router.post("/update", async (req, res) => {
         : status === "Not Interested"
           ? "Marked as Not Interested"
           : "Field Visit marked as Done",
-      newFollowupCount: newFollowupCount, // Frontend ko bata rahe hain
+      newFollowupCount: newFollowupCount,
     });
   } catch (error) {
     console.error("❌ Update failed:", error.message);

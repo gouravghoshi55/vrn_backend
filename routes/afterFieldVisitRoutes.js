@@ -36,8 +36,8 @@ function formatDateToSheetStyle(dateInput) {
 
 router.get("/list", async (req, res) => {
   try {
-    const getData = async (sheetName) => {
-      const response = await req.sheets.spreadsheets.values.get({
+    const getData = async (sheets, sheetName) => {  // ✅ sheets parameter added
+      const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         range: `'${sheetName}'!A8:AG`, // Extended to AG
       });
@@ -54,13 +54,17 @@ router.get("/list", async (req, res) => {
 
           // Filter: show if planned exists and actual empty OR specific status
           if ((plannedDate && !actualDate) || status === "No conversation") {
-            const oldRemarks = getCol(24);     // Y – first priority
-            const latestRemarks = getCol(32);  // AG – fallback
 
-            let remarks = oldRemarks;
-            if (!remarks && latestRemarks) {
-              remarks = latestRemarks;
-            }
+            // ===== ALL REMARKS COLUMNS =====
+            const oldRemarks = getCol(11);           // L - Initial/Oldest Remarks
+            const previousRemarksDate = getCol(13);  // N - Date for T remarks
+            const previousRemarks = getCol(19);      // T - Previous Remarks
+            const latestOldRemarks = getCol(24);     // Y - Latest Old Remarks
+            const latestOldRemarksDate = getCol(21); // V - Date for Y remarks
+            const currentRemarks = getCol(32);       // AG - Current/New Remarks
+
+            // Display priority for table: AG > Y > T > L
+            let displayRemarks = currentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
 
             return {
               rowIndex: index + 8,
@@ -77,7 +81,14 @@ router.get("/list", async (req, res) => {
               plannedDate,
               status: status || "Pending",
               followUpCount: getCol(31) || "0", // AF
-              remarks,
+
+              // ===== SEND ALL REMARKS TO FRONTEND =====
+              remarks: displayRemarks,                      // For table display
+              oldRemarks: oldRemarks,                       // L - Initial remarks (read-only)
+              previousRemarks: previousRemarks,             // T - Previous remarks (read-only)
+              previousRemarksDate: previousRemarksDate,     // N - Date for T
+              latestOldRemarks: latestOldRemarks,          // Y - Latest old remarks (read-only)
+              latestOldRemarksDate: latestOldRemarksDate,  // V - Date for Y
             };
           }
           return null;
@@ -85,9 +96,10 @@ router.get("/list", async (req, res) => {
         .filter(Boolean);
     };
 
+    // ✅ Pass req.sheets to getData function
     const [endUserLeads, channelPartnerLeads] = await Promise.all([
-      getData(SHEETS.END_USER),
-      getData(SHEETS.CHANNEL_PARTNER),
+      getData(req.sheets, SHEETS.END_USER),
+      getData(req.sheets, SHEETS.CHANNEL_PARTNER),
     ]);
 
     let allLeads = [...endUserLeads, ...channelPartnerLeads];
@@ -143,16 +155,15 @@ router.post("/update", async (req, res) => {
       values: [[newCount]],
     });
 
-    // Always update remarks (AG) if provided
+    // ===== ALWAYS UPDATE NEW REMARKS IN COLUMN AG =====
     if (remarks && String(remarks).trim()) {
       updates.push({
-        range: `'${sheetName}'!AG${rowIndex}`,
+        range: `'${sheetName}'!AG${rowIndex}`,  // New remarks save to AG
         values: [[String(remarks).trim()]],
       });
     }
 
     // ── RESCHEDULE CASE ──
-    // Only trigger if rescheduleDate is non-empty and looks valid
     if (rescheduleDate && String(rescheduleDate).trim() !== "" && ["No conversation", "Next Follow Up"].includes(status || "")) {
       const formatted = formatDateToSheetStyle(rescheduleDate);
       console.log("Processing RESCHEDULE to:", formatted);
@@ -171,12 +182,12 @@ router.post("/update", async (req, res) => {
         range: `'${sheetName}'!AC${rowIndex}`,  // Status
         values: [[status]],
       });
-    } 
+    }
     // ── MARK DONE / NOT INTERESTED / OTHER STATUS ──
     else {
       console.log("Processing MARK DONE / STATUS UPDATE:", status);
 
-      // Write actual timestamp (AB) – this should now always happen for non-reschedule
+      // Write actual timestamp (AB)
       updates.push({
         range: `'${sheetName}'!AB${rowIndex}`,
         values: [[timestamp]],

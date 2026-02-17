@@ -4,11 +4,13 @@ const cors = require("cors");
 const { google } = require("googleapis");
 const app = express();
 const PORT = process.env.PORT || 5000;
+
 // ============================================
 // Middleware
 // ============================================
 app.use(cors());
 app.use(express.json());
+
 // ============================================
 // Google Sheets Setup (ENV Based)
 // ============================================
@@ -17,6 +19,7 @@ const auth = new google.auth.JWT({
   key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
+
 let sheets;
 async function initializeGoogleSheets() {
   try {
@@ -27,8 +30,10 @@ async function initializeGoogleSheets() {
     console.error("❌ Google Sheets connection failed:", error);
   }
 }
+
 // Initialize on startup
 initializeGoogleSheets();
+
 // ============================================
 // Middleware - Attach sheets to request
 // ============================================
@@ -42,6 +47,7 @@ app.use((req, res, next) => {
   req.sheets = sheets;
   next();
 });
+
 // ============================================
 // Import Routes
 // ============================================
@@ -49,6 +55,8 @@ const nbdinRoutes = require("./routes/nbdinRoutes");
 const fieldVisitRoutes = require("./routes/fieldVisitRoutes");
 const afterFieldVisitRoutes = require("./routes/afterFieldVisitRoutes");
 const meetingNbdRoutes = require("./routes/meetingNbdRoutes");
+const bookingNbdRoutes = require("./routes/bookingNbdRoutes");  // ✅ NEW - Booking Routes
+
 // ============================================
 // Use Routes
 // ============================================
@@ -56,6 +64,8 @@ app.use("/api/leads", nbdinRoutes);
 app.use("/api/field-visit", fieldVisitRoutes);
 app.use("/api/after-field-visit", afterFieldVisitRoutes);
 app.use("/api/meeting-nbd", meetingNbdRoutes);
+app.use("/api/booking-nbd", bookingNbdRoutes);  // ✅ NEW - Booking API
+
 // ============================================
 // Health Check Route
 // ============================================
@@ -66,6 +76,7 @@ app.get("/", (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
 app.get("/api/health", (req, res) => {
   res.json({
     success: true,
@@ -73,6 +84,7 @@ app.get("/api/health", (req, res) => {
     sheetsConnected: !!sheets,
   });
 });
+
 // ============================================
 // Global Error Handler
 // ============================================
@@ -84,6 +96,7 @@ app.use((err, req, res, next) => {
     message: err.message,
   });
 });
+
 // ============================================
 // Start Server
 // ============================================
@@ -92,4 +105,6 @@ app.listen(PORT, () => {
   console.log(`📊 NBDIN API: /api/leads/nbdin`);
   console.log(`📊 Field Visit API: /api/field-visit/list`);
   console.log(`📊 After Field Visit API: /api/after-field-visit/list`);
+  console.log(`📊 Meeting NBD API: /api/meeting-nbd/list`);
+  console.log(`📊 Booking NBD API: /api/booking-nbd/list`);  // ✅ NEW
 });

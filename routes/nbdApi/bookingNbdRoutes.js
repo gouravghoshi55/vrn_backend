@@ -5,7 +5,7 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 const SHEETS = {
   END_USER: "END USER LEADS FMS",
-  CHANNEL_PARTNER: "Channel Partener Lead FMS",
+  // CHANNEL_PARTNER: "Channel Partener Lead FMS",
 };
 
 // ============================================
@@ -65,7 +65,7 @@ async function getFilteredBookingLeads(sheets, sheetName) {
     // Show ONLY if:
     // - Planned date (AM) is NOT empty
     // - AND Actual date (AN) IS empty
-    const showRow = plannedDate && !actualDate;
+    const showRow = plannedDate && !actualDate ;
 
     if (showRow) {
       filtered.push({

@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const NBD_SHEET_NAME = "END USER LEADS FMS"; // ✅ Only END USER sheet
+const CP_SHEET_NAME = "Channel Partener Lead FMS"; // ✅ Only CP sheet
 
 // ======================================================
 // HELPERS
@@ -33,14 +33,14 @@ function formatDateToSheetStyle(dateInput) {
 }
 
 // ======================================================
-// READ DATA - NBD After Field Visit
+// READ DATA - CP After Field Visit with Category Filter
 // ======================================================
 
-async function getFilteredLeads(sheets) {
+async function getFilteredCPLeads(sheets, category) {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${NBD_SHEET_NAME}'!A8:AG`,
+      range: `'${CP_SHEET_NAME}'!A8:AR`, // Extended to AR
     });
 
     const rows = response.data.values || [];
@@ -52,8 +52,16 @@ async function getFilteredLeads(sheets) {
         const plannedDate = getCol(26); // AA
         const actualDate = getCol(27);  // AB
         const status = getCol(28);      // AC
+        const canContact = getCol(43);  // AR
 
-        // Filter: show if planned exists and actual empty OR specific status
+        // Category filter
+        const categoryMatch =
+          (category === "can-contact" && canContact === "Yes") ||
+          (category === "cannot-contact" && canContact === "No");
+
+        if (!categoryMatch) return null;
+
+        // Filter condition
         if ((plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up") {
           // ===== ALL REMARKS COLUMNS =====
           const oldRemarks = getCol(11);           // L
@@ -63,12 +71,11 @@ async function getFilteredLeads(sheets) {
           const latestOldRemarksDate = getCol(21); // V
           const currentRemarks = getCol(32);       // AG
 
-          // Display priority: AG > Y > T > L
           let displayRemarks = currentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
 
           return {
             rowIndex: index + 8,
-            sheetName: NBD_SHEET_NAME,
+            sheetName: CP_SHEET_NAME,
             uniqueId: getCol(1),
             customerName: getCol(2),
             customerContact: getCol(3),
@@ -87,26 +94,28 @@ async function getFilteredLeads(sheets) {
             previousRemarksDate: previousRemarksDate,
             latestOldRemarks: latestOldRemarks,
             latestOldRemarksDate: latestOldRemarksDate,
+            canContact: canContact,
           };
         }
         return null;
       })
       .filter(Boolean);
   } catch (error) {
-    console.error("Error fetching NBD After Field Visit leads:", error.message);
+    console.error(`Error fetching CP After Field Visit (${category}):`, error.message);
     throw error;
   }
 }
 
 // ======================================================
-// GET /list - NBD After Field Visit
+// GET ENDPOINTS - CP After Field Visit
 // ======================================================
 
-router.get("/list", async (req, res) => {
+// Can Contact List
+router.get("/can-contact/list", async (req, res) => {
   try {
-    console.log("📊 Fetching NBD After Field Visit data (END USER only)...");
+    console.log("📊 Fetching CP Can Contact After Field Visit data...");
 
-    const leads = await getFilteredLeads(req.sheets);
+    const leads = await getFilteredCPLeads(req.sheets, "can-contact");
 
     leads.sort((a, b) => {
       const parse = (d) => {
@@ -121,9 +130,41 @@ router.get("/list", async (req, res) => {
       success: true,
       data: leads,
       total: leads.length,
+      category: "can-contact",
     });
   } catch (error) {
-    console.error("❌ Error fetching NBD After Field Visit:", error);
+    console.error("❌ Error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+// Cannot Contact List
+router.get("/cannot-contact/list", async (req, res) => {
+  try {
+    console.log("📊 Fetching CP Cannot Contact After Field Visit data...");
+
+    const leads = await getFilteredCPLeads(req.sheets, "cannot-contact");
+
+    leads.sort((a, b) => {
+      const parse = (d) => {
+        if (!d) return 0;
+        const p = d.split(/[\/ :]/);
+        return new Date(p[2], p[1] - 1, p[0], p[3] || 0, p[4] || 0).getTime();
+      };
+      return parse(a.plannedDate) - parse(b.plannedDate);
+    });
+
+    res.json({
+      success: true,
+      data: leads,
+      total: leads.length,
+      category: "cannot-contact",
+    });
+  } catch (error) {
+    console.error("❌ Error:", error);
     res.status(500).json({
       success: false,
       message: error.message,
@@ -132,14 +173,15 @@ router.get("/list", async (req, res) => {
 });
 
 // ======================================================
-// POST /update - NBD After Field Visit
+// POST ENDPOINTS - CP After Field Visit Update
 // ======================================================
 
-router.post("/update", async (req, res) => {
+// Can Contact Update
+router.post("/can-contact/update", async (req, res) => {
   try {
     const { rowIndex, status, remarks, rescheduleDate, dealMeetingDate } = req.body;
 
-    console.log("📝 NBD After Field Visit Update:", {
+    console.log("📝 CP Can Contact After Field Visit Update:", {
       rowIndex,
       status,
       remarks,
@@ -158,7 +200,7 @@ router.post("/update", async (req, res) => {
     try {
       const countRes = await req.sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `'${NBD_SHEET_NAME}'!AF${rowIndex}`,
+        range: `'${CP_SHEET_NAME}'!AF${rowIndex}`,
       });
       const val = countRes.data.values?.[0]?.[0];
       currentCount = parseInt(val) || 0;
@@ -170,66 +212,49 @@ router.post("/update", async (req, res) => {
     const updates = [];
     const timestamp = getCurrentTimestamp();
 
-    // Always increment count (AF)
     updates.push({
-      range: `'${NBD_SHEET_NAME}'!AF${rowIndex}`,
+      range: `'${CP_SHEET_NAME}'!AF${rowIndex}`,
       values: [[newCount]],
     });
 
-    // Always update new remarks (AG)
     if (remarks && String(remarks).trim()) {
       updates.push({
-        range: `'${NBD_SHEET_NAME}'!AG${rowIndex}`,
+        range: `'${CP_SHEET_NAME}'!AG${rowIndex}`,
         values: [[String(remarks).trim()]],
       });
     }
 
-    // RESCHEDULE CASE
     if (
       rescheduleDate &&
       String(rescheduleDate).trim() !== "" &&
       ["No conversation", "Next Follow Up"].includes(status || "")
     ) {
       const formatted = formatDateToSheetStyle(rescheduleDate);
-      console.log("→ Processing RESCHEDULE to:", formatted);
-
       updates.push({
-        range: `'${NBD_SHEET_NAME}'!AA${rowIndex}`, // Planned
+        range: `'${CP_SHEET_NAME}'!AA${rowIndex}`,
         values: [[formatted]],
       });
-
       updates.push({
-        range: `'${NBD_SHEET_NAME}'!AE${rowIndex}`, // Next FollowUp Date
+        range: `'${CP_SHEET_NAME}'!AE${rowIndex}`,
         values: [[formatted]],
       });
-
       updates.push({
-        range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`, // Status
+        range: `'${CP_SHEET_NAME}'!AC${rowIndex}`,
         values: [[status]],
       });
-    }
-    // MARK DONE / OTHER STATUS
-    else {
-      console.log("→ Processing DONE / STATUS UPDATE:", status);
-
-      // Actual timestamp (AB)
+    } else {
       updates.push({
-        range: `'${NBD_SHEET_NAME}'!AB${rowIndex}`,
+        range: `'${CP_SHEET_NAME}'!AB${rowIndex}`,
         values: [[timestamp]],
       });
-
-      // Status (AC)
-      let finalStatus = status || "Done";
       updates.push({
-        range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`,
-        values: [[finalStatus]],
+        range: `'${CP_SHEET_NAME}'!AC${rowIndex}`,
+        values: [[status || "Done"]],
       });
-
-      // Deal Meeting Date (AD)
       if (dealMeetingDate) {
         const formattedDeal = formatDateToSheetStyle(dealMeetingDate);
         updates.push({
-          range: `'${NBD_SHEET_NAME}'!AD${rowIndex}`,
+          range: `'${CP_SHEET_NAME}'!AD${rowIndex}`,
           values: [[formattedDeal]],
         });
       }
@@ -243,7 +268,6 @@ router.post("/update", async (req, res) => {
           data: updates,
         },
       });
-      console.log(`✅ NBD After Field Visit updated: Row ${rowIndex}`);
     }
 
     res.json({
@@ -252,7 +276,115 @@ router.post("/update", async (req, res) => {
       newFollowUpCount: newCount,
     });
   } catch (error) {
-    console.error("❌ NBD After Field Visit update failed:", error);
+    console.error("❌ Update failed:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Cannot Contact Update
+router.post("/cannot-contact/update", async (req, res) => {
+  try {
+    const { rowIndex, status, remarks, rescheduleDate, dealMeetingDate } = req.body;
+
+    console.log("📝 CP Cannot Contact After Field Visit Update:", {
+      rowIndex,
+      status,
+      remarks,
+      rescheduleDate,
+      dealMeetingDate,
+    });
+
+    if (!rowIndex) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing rowIndex",
+      });
+    }
+
+    let currentCount = 0;
+    try {
+      const countRes = await req.sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `'${CP_SHEET_NAME}'!AF${rowIndex}`,
+      });
+      const val = countRes.data.values?.[0]?.[0];
+      currentCount = parseInt(val) || 0;
+    } catch (e) {
+      console.warn("Could not read count:", e.message);
+    }
+
+    const newCount = currentCount + 1;
+    const updates = [];
+    const timestamp = getCurrentTimestamp();
+
+    updates.push({
+      range: `'${CP_SHEET_NAME}'!AF${rowIndex}`,
+      values: [[newCount]],
+    });
+
+    if (remarks && String(remarks).trim()) {
+      updates.push({
+        range: `'${CP_SHEET_NAME}'!AG${rowIndex}`,
+        values: [[String(remarks).trim()]],
+      });
+    }
+
+    if (
+      rescheduleDate &&
+      String(rescheduleDate).trim() !== "" &&
+      ["No conversation", "Next Follow Up"].includes(status || "")
+    ) {
+      const formatted = formatDateToSheetStyle(rescheduleDate);
+      updates.push({
+        range: `'${CP_SHEET_NAME}'!AA${rowIndex}`,
+        values: [[formatted]],
+      });
+      updates.push({
+        range: `'${CP_SHEET_NAME}'!AE${rowIndex}`,
+        values: [[formatted]],
+      });
+      updates.push({
+        range: `'${CP_SHEET_NAME}'!AC${rowIndex}`,
+        values: [[status]],
+      });
+    } else {
+      updates.push({
+        range: `'${CP_SHEET_NAME}'!AB${rowIndex}`,
+        values: [[timestamp]],
+      });
+      updates.push({
+        range: `'${CP_SHEET_NAME}'!AC${rowIndex}`,
+        values: [[status || "Done"]],
+      });
+      if (dealMeetingDate) {
+        const formattedDeal = formatDateToSheetStyle(dealMeetingDate);
+        updates.push({
+          range: `'${CP_SHEET_NAME}'!AD${rowIndex}`,
+          values: [[formattedDeal]],
+        });
+      }
+    }
+
+    if (updates.length > 0) {
+      await req.sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          valueInputOption: "USER_ENTERED",
+          data: updates,
+        },
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Updated successfully",
+      newFollowUpCount: newCount,
+    });
+  } catch (error) {
+    console.error("❌ Update failed:", error);
     res.status(500).json({
       success: false,
       error: error.message,

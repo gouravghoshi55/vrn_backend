@@ -3,10 +3,7 @@ const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
-const SHEETS = {
-  END_USER: "END USER LEADS FMS",
-  CHANNEL_PARTNER: "Channel Partener Lead FMS",
-};
+const SHEET_NAME = "END USER LEADS FMS";  // ← Ab sirf yeh sheet
 
 // ============================================
 // Helpers
@@ -36,41 +33,34 @@ function parseDate(dateStr) {
 }
 
 // ============================================
-// FETCH LIST - Show when Planned (AM) is NOT NULL and Actual (AN) is NULL
+// FETCH LIST - Only Planned (AM) is NOT NULL
 // ============================================
 
-async function getFilteredBookingLeads(sheets, sheetName) {
+async function getFilteredBookingLeads(sheets) {
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${sheetName}'!A8:AQ`,  // Up to AQ (Unit No column)
+    range: `'${SHEET_NAME}'!A8:AQ`,  // Up to AQ (Unit No)
   });
 
   const rows = response.data.values || [];
   const filtered = [];
 
   rows.forEach((row, index) => {
-    // Column mappings (0-based indices)
-    // AM = column 39 (index 38) → Planned
-    // AN = column 40 (index 39) → Actual
-    // AO = column 41 (index 40) → Status
-    // AP = column 42 (index 41) → Block
-    // AQ = column 43 (index 42) → Unit No
+    // 0-based indices
+    const plannedDate  = row[38] ? row[38].trim() : "";   // AM → Planned (col 39)
+    const actualDate   = row[39] ? row[39].trim() : "";   // AN → Actual (col 40)
+    const status       = row[40] ? row[40].trim() : "";   // AO → Status (col 41)
+    const block        = row[41] ? row[41].trim() : "";   // AP → Block (col 42)
+    const unitNo       = row[42] ? row[42].trim() : "";   // AQ → Unit No (col 43)
 
-    const plannedDate = row[38] ? row[38].trim() : "";         // AM → Planned
-    const actualDate = row[39] ? row[39].trim() : "";          // AN → Actual
-    const status = row[40] ? row[40].trim() : "";              // AO → Status
-    const block = row[41] ? row[41].trim() : "";               // AP → Block
-    const unitNo = row[42] ? row[42].trim() : "";              // AQ → Unit No
-
-    // Show ONLY if:
-    // - Planned date (AM) is NOT empty
-    // - AND Actual date (AN) IS empty
-    const showRow = plannedDate && !actualDate ;
+    // Show row only if Planned date exists (AM not empty)
+    // You can add more strict condition if needed: && !actualDate
+    const showRow = plannedDate !== "";
 
     if (showRow) {
       filtered.push({
         rowIndex: index + 8,
-        sheetName,
+        sheetName: SHEET_NAME,           // fixed
         uniqueId: row[1] || "",
         customerName: row[2] || "",
         customerContact: row[3] || "",
@@ -96,20 +86,15 @@ async function getFilteredBookingLeads(sheets, sheetName) {
 
 router.get("/list", async (req, res) => {
   try {
-    const [endUser, channelPartner] = await Promise.all([
-      getFilteredBookingLeads(req.sheets, SHEETS.END_USER),
-      getFilteredBookingLeads(req.sheets, SHEETS.CHANNEL_PARTNER),
-    ]);
-
-    const all = [...endUser, ...channelPartner];
+    const leads = await getFilteredBookingLeads(req.sheets);
 
     // Sort by planned date
-    all.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
+    leads.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
 
     res.json({
       success: true,
-      data: all,
-      total: all.length,
+      data: leads,
+      total: leads.length,
     });
   } catch (err) {
     console.error("Error fetching booking leads:", err);
@@ -119,17 +104,19 @@ router.get("/list", async (req, res) => {
 
 // ============================================
 // UPDATE - POST /update
-// Handles: Status (AO), Block (AP), Unit No (AQ), Actual (AN)
 // ============================================
 
 router.post("/update", async (req, res) => {
   try {
-    const { sheetName, rowIndex, status, block, unitNo } = req.body;
+    const { rowIndex, status, block, unitNo } = req.body;
+
+    // sheetName ab fixed hai — frontend se nahi bhejna padega
+    const sheetName = SHEET_NAME;
 
     console.log("Booking Update Payload:", { sheetName, rowIndex, status, block, unitNo });
 
-    if (!sheetName || !rowIndex) {
-      return res.status(400).json({ success: false, error: "Missing sheetName or rowIndex" });
+    if (!rowIndex) {
+      return res.status(400).json({ success: false, error: "Missing rowIndex" });
     }
 
     if (!status) {
@@ -139,13 +126,13 @@ router.post("/update", async (req, res) => {
     const timestamp = getCurrentTimestamp();
     const updates = [];
 
-    // Update Status (AO) - column 41
+    // Status (AO) – always update
     updates.push({
       range: `'${sheetName}'!AO${rowIndex}`,
       values: [[String(status).trim()]],
     });
 
-    // Update Block (AP) - column 42
+    // Block (AP) – optional
     if (block && String(block).trim() !== "") {
       updates.push({
         range: `'${sheetName}'!AP${rowIndex}`,
@@ -153,7 +140,7 @@ router.post("/update", async (req, res) => {
       });
     }
 
-    // Update Unit No (AQ) - column 43
+    // Unit No (AQ) – optional
     if (unitNo && String(unitNo).trim() !== "") {
       updates.push({
         range: `'${sheetName}'!AQ${rowIndex}`,
@@ -161,13 +148,12 @@ router.post("/update", async (req, res) => {
       });
     }
 
-    // Update Actual timestamp (AN) - marks booking as completed
+    // Actual timestamp (AN) – mark as done
     updates.push({
       range: `'${sheetName}'!AN${rowIndex}`,
       values: [[timestamp]],
     });
 
-    // Batch update all changes
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {

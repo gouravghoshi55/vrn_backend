@@ -53,7 +53,7 @@ router.get("/list", async (req, res) => {
           const status = getCol(28);      // AC
 
           // Filter: show if planned exists and actual empty OR specific status
-          if ((plannedDate && !actualDate) || status === "No conversation") {
+          if ((plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up") {
 
             // ===== ALL REMARKS COLUMNS =====
             const oldRemarks = getCol(11);           // L - Initial/Oldest Remarks

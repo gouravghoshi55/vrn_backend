@@ -5,7 +5,7 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 const SHEETS = {
   END_USER: "END USER LEADS FMS",
-  // CHANNEL_PARTNER: "Channel Partener Lead FMS",
+  CHANNEL_PARTNER: "Channel Partener Lead FMS",
 };
 
 // ============================================

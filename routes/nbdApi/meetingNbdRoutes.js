@@ -2,26 +2,31 @@ const express = require("express");
 const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const SHEET_NAME = "END USER LEADS FMS";
+
+const SHEET_NAME = "END USER LEADS FMS";   // ← sirf yeh sheet ab kaam karegi
 
 // ============================================
-// Helpers (copied & slightly cleaned)
+// Helpers (same as before)
 // ============================================
 
 function getCurrentTimestamp() {
   const now = new Date();
-  return [
-    String(now.getDate()).padStart(2, "0"),
-    String(now.getMonth() + 1).padStart(2, "0"),
-    now.getFullYear(),
-    String(now.getHours()).padStart(2, "0"),
-    String(now.getMinutes()).padStart(2, "0"),
-    String(now.getSeconds()).padStart(2, "0"),
-  ].join("/").replace(/(\d{2}\/\d{2}\/\d{4})\/(\d{2}:\d{2}:\d{2})/, "$1 $2");
+  const d = String(now.getDate()).padStart(2, "0");
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const y = now.getFullYear();
+  const h = String(now.getHours()).padStart(2, "0");
+  const mi = String(now.getMinutes()).padStart(2, "0");
+  const s = String(now.getSeconds()).padStart(2, "0");
+  return `${d}/${m}/${y} ${h}:${mi}:${s}`;
 }
 
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
+  const now = new Date();
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+  const timePart = `${hours}:${minutes}:${seconds}`;
 
   let formattedDate = dateStr;
   if (dateStr.includes("-")) {
@@ -30,14 +35,6 @@ function getPlannedDateTime(dateStr) {
       formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
   }
-
-  const now = new Date();
-  const timePart = [
-    String(now.getHours()).padStart(2, "0"),
-    String(now.getMinutes()).padStart(2, "0"),
-    String(now.getSeconds()).padStart(2, "0"),
-  ].join(":");
-
   return `${formattedDate} ${timePart}`;
 }
 
@@ -45,156 +42,179 @@ function parseDate(dateStr) {
   if (!dateStr) return new Date(0);
   const parts = dateStr.split(/[\/\-]/);
   if (parts.length === 3) {
-    if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
+    if (parts[0].length === 4) {
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
     return new Date(parts[2], parts[1] - 1, parts[0]);
   }
   return new Date(dateStr);
 }
 
 // ============================================
-// FETCH Filtered Leads
+// FETCH LIST - Only END USER sheet
 // ============================================
 
-async function getFilteredNBDLeads(sheets) {
-  try {
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `'${SHEET_NAME}'!A8:AL`,
-    });
+async function getFilteredLeads(sheets) {
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `'${SHEET_NAME}'!A8:AL`,
+  });
 
-    const rows = response.data.values || [];
-    const filtered = [];
+  const rows = response.data.values || [];
+  const filtered = [];
 
-    rows.forEach((row, index) => {
-      const plannedDate    = row[33]?.trim() || "";   // AH (34)
-      const actualDate     = row[34]?.trim() || "";   // AI (35)
-      let   status         = row[35]?.trim() || "";   // AJ (36)
+  rows.forEach((row, index) => {
+    const plannedDate = row[33] ? row[33].trim() : "";         // AH
+    const actualDate = row[34] ? row[34].trim() : "";          // AI
+    let status = row[35] ? row[35].trim() : "";                // AJ
 
-      // All remarks columns
-      const oldRemarks          = row[11]?.trim() || "";     // L
-      const previousRemarksDate = row[13]?.trim() || "";     // N
-      const previousRemarks     = row[19]?.trim() || "";     // T
-      const latestOldRemarksDate= row[21]?.trim() || "";     // V
-      const latestOldRemarks    = row[24]?.trim() || "";     // Y
-      const recentRemarksDate   = row[27]?.trim() || "";     // AB
-      const recentRemarks       = row[32]?.trim() || "";     // AG
-      const currentRemarks      = row[37]?.trim() || "";     // AL
+    // All remarks columns
+    const oldRemarks = row[11] ? row[11].trim() : "";
+    const previousRemarksDate = row[13] ? row[13].trim() : "";
+    const previousRemarks = row[19] ? row[19].trim() : "";
+    const latestOldRemarksDate = row[21] ? row[21].trim() : "";
+    const latestOldRemarks = row[24] ? row[24].trim() : "";
+    const recentRemarksDate = row[27] ? row[27].trim() : "";
+    const recentRemarks = row[32] ? row[32].trim() : "";
+    const currentRemarks = row[37] ? row[37].trim() : "";
 
-      // Display logic: newest → oldest
-      const displayRemarks = currentRemarks || recentRemarks || latestOldRemarks ||
-                             previousRemarks || oldRemarks;
+    let displayRemarks = currentRemarks || recentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
 
-      const showRow = !!plannedDate &&
-        (!status || status.trim().toLowerCase() === "rescheduled");
+    const showRow = plannedDate &&
+      (!status || status.trim().toLowerCase() === "rescheduled");
 
-      if (showRow) {
-        if (!status.trim()) status = "Pending";
+    if (showRow) {
+      if (!status.trim()) status = "Pending";
 
-        filtered.push({
-          rowIndex: index + 8,
-          sheetName: SHEET_NAME,
-          uniqueId: row[1] || "",
-          customerName: row[2] || "",
-          customerContact: row[3] || "",
-          interestedIn: row[4] || "",
-          projectSelection: row[5] || "",
-          leadSource: row[6] || "",
-          leadGenNumber: row[7] || "",
-          leadGenName: row[8] || "",
-          plannedDate,
-          status,
-          remarks: displayRemarks,
-          oldRemarks,
-          previousRemarks,
-          previousRemarksDate,
-          latestOldRemarks,
-          latestOldRemarksDate,
-          recentRemarks,
-          recentRemarksDate,
-        });
-      }
-    });
+      filtered.push({
+        rowIndex: index + 8,
+        sheetName: SHEET_NAME,          // fixed
+        uniqueId: row[1] || "",
+        customerName: row[2] || "",
+        customerContact: row[3] || "",
+        interestedIn: row[4] || "",
+        projectSelection: row[5] || "",
+        leadSource: row[6] || "",
+        leadGenNumber: row[7] || "",
+        leadGenName: row[8] || "",
+        plannedDate,
+        status,
+        
+        remarks: displayRemarks,
+        oldRemarks,
+        previousRemarks,
+        previousRemarksDate,
+        latestOldRemarks,
+        latestOldRemarksDate,
+        recentRemarks,
+        recentRemarksDate,
+      });
+    }
+  });
 
-    return filtered;
-  } catch (err) {
-    console.error(`Error fetching END USER leads:`, err.message);
-    throw err;
-  }
+  return filtered;
 }
 
 // ============================================
 // ROUTES
 // ============================================
 
-router.get("/nbd/list", async (req, res) => {
+router.get("/list", async (req, res) => {
   try {
-    console.log("Fetching END USER follow-up leads...");
-    const leads = await getFilteredNBDLeads(req.sheets);
+    const leads = await getFilteredLeads(req.sheets);
 
+    // Sort by planned date
     leads.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
 
     res.json({
       success: true,
       data: leads,
       total: leads.length,
-      category: "end-user",
     });
   } catch (err) {
-    console.error("Error fetching END USER leads:", err);
+    console.error("Error fetching leads:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-router.post("/nbd/update", async (req, res) => {
+router.post("/update", async (req, res) => {
   try {
     const { rowIndex, status, rescheduleDate, remarks } = req.body;
+
+    // sheetName ab frontend se nahi lenge — fixed hai
+    const sheetName = SHEET_NAME;
+
+    console.log("Update Payload:", { sheetName, rowIndex, status, rescheduleDate, remarks });
 
     if (!rowIndex) {
       return res.status(400).json({ success: false, error: "Missing rowIndex" });
     }
 
-    console.log("Updating END USER lead:", { rowIndex, status, rescheduleDate });
-
     const timestamp = getCurrentTimestamp();
     const updates = [];
 
-    // Get & increment Followup Count (column Z)
-    let currentCount = 0;
+    // Followup Count (Z column) increment
+    let currentFollowupCount = 0;
     try {
-      const res = await req.sheets.spreadsheets.values.get({
+      const countRes = await req.sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `'${SHEET_NAME}'!Z${rowIndex}`,
+        range: `'${sheetName}'!Z${rowIndex}`,
       });
-      currentCount = parseInt(res.data.values?.[0]?.[0] || "0", 10);
-    } catch {}
+      const val = countRes.data.values?.[0]?.[0];
+      currentFollowupCount = val ? parseInt(String(val).trim(), 10) || 0 : 0;
+    } catch (e) {
+      console.warn("Could not read followup count:", e.message);
+    }
+    const newFollowupCount = currentFollowupCount + 1;
 
-    const newCount = currentCount + 1;
     updates.push({
-      range: `'${SHEET_NAME}'!Z${rowIndex}`,
-      values: [[newCount]],
+      range: `'${sheetName}'!Z${rowIndex}`,
+      values: [[newFollowupCount]],
     });
 
-    if (rescheduleDate && rescheduleDate.trim()) {
-      // Reschedule
+    // Main update logic
+    if (rescheduleDate && String(rescheduleDate).trim() !== "") {
       const newPlanned = getPlannedDateTime(rescheduleDate);
-      updates.push({ range: `'${SHEET_NAME}'!AH${rowIndex}`, values: [[newPlanned]] });
-      updates.push({ range: `'${SHEET_NAME}'!AJ${rowIndex}`, values: [["Rescheduled"]] });
-    } else if (["Not Interested", "Negotiation Failed", "Deal Not Done"].includes(status)) {
-      // Final close cases
-      updates.push({ range: `'${SHEET_NAME}'!AI${rowIndex}`, values: [[timestamp]] });
-      updates.push({ range: `'${SHEET_NAME}'!AJ${rowIndex}`, values: [[status]] });
+      updates.push({
+        range: `'${sheetName}'!AH${rowIndex}`,
+        values: [[newPlanned]],
+      });
+      updates.push({
+        range: `'${sheetName}'!AJ${rowIndex}`,
+        values: [["Rescheduled"]],
+      });
+    } 
+    else if (["Not Interested", "Negotiation Failed", "Deal Not Done"].includes(status)) {
+      updates.push({
+        range: `'${sheetName}'!AI${rowIndex}`,
+        values: [[timestamp]],
+      });
+      updates.push({
+        range: `'${sheetName}'!AJ${rowIndex}`,
+        values: [[status]],
+      });
       // Optional: clear planned date
-      updates.push({ range: `'${SHEET_NAME}'!AH${rowIndex}`, values: [[""]] });
-    } else {
-      // Mark done / other
-      updates.push({ range: `'${SHEET_NAME}'!AI${rowIndex}`, values: [[timestamp]] });
-      updates.push({ range: `'${SHEET_NAME}'!AJ${rowIndex}`, values: [[status || "Done"]] });
+      updates.push({
+        range: `'${sheetName}'!AH${rowIndex}`,
+        values: [[""]],
+      });
+    } 
+    else {
+      updates.push({
+        range: `'${sheetName}'!AI${rowIndex}`,
+        values: [[timestamp]],
+      });
+      updates.push({
+        range: `'${sheetName}'!AJ${rowIndex}`,
+        values: [[status || "Done"]],
+      });
     }
 
-    if (remarks?.trim()) {
+    // Save new remarks → AL
+    if (remarks && String(remarks).trim() !== "") {
       updates.push({
-        range: `'${SHEET_NAME}'!AL${rowIndex}`,
-        values: [[remarks.trim()]],
+        range: `'${sheetName}'!AL${rowIndex}`,
+        values: [[String(remarks).trim()]],
       });
     }
 
@@ -208,13 +228,15 @@ router.post("/nbd/update", async (req, res) => {
 
     res.json({
       success: true,
-      message: rescheduleDate ? "Rescheduled" : 
-               ["Not Interested", "Negotiation Failed", "Deal Not Done"].includes(status) 
-                 ? `Marked as ${status}` : "Updated",
-      newFollowupCount: newCount,
+      message: rescheduleDate 
+        ? "Rescheduled Successfully" 
+        : ["Not Interested", "Negotiation Failed", "Deal Not Done"].includes(status)
+          ? "Marked as " + status
+          : "Updated Successfully",
+      newFollowupCount,
     });
   } catch (err) {
-    console.error("END USER update failed:", err);
+    console.error("Update failed:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

@@ -51,7 +51,7 @@ async function getFilteredCPLeads(sheets, category) {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${CP_SHEET_NAME}'!A8:AR`, // Extended to AR for Can Contact column
+      range: `'${CP_SHEET_NAME}'!A8:AT`, // Extended to AR for Can Contact column
     });
 
     const rows = response.data.values || [];
@@ -81,7 +81,7 @@ async function getFilteredCPLeads(sheets, category) {
       const oldRemarkL = row[11] ? row[11].trim() : "";
       const latestRemarkT = row[19] ? row[19].trim() : "";
       
-      const canContact = row[43] ? row[43].trim() : ""; // Column AR (Can Contact)
+      const canContact = row[45] ? row[45].trim() : ""; // Column AT (Can Contact)
 
       // --- FILTER BY CATEGORY (Can Contact / Cannot Contact) ---
       const categoryMatch =

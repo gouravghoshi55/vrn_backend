@@ -22,20 +22,29 @@ function getCurrentTimestamp() {
 
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
-  const now = new Date();
-  const hours = String(now.getHours()).padStart(2, "0");
-  const minutes = String(now.getMinutes()).padStart(2, "0");
-  const seconds = String(now.getSeconds()).padStart(2, "0");
-  const timePart = `${hours}:${minutes}:${seconds}`;
 
-  let formattedDate = dateStr;
-  if (dateStr.includes("-")) {
-    const parts = dateStr.split("-");
-    if (parts[0].length === 4) {
-      formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
-    }
+  // agar already DD/MM/YYYY HH:mm:ss format me hai → use as is
+  if (dateStr.includes(":") && dateStr.includes("/")) {
+    return dateStr.trim();
   }
-  return `${formattedDate} ${timePart}`;
+
+  // agar datetime-local (2026-02-26T14:44) aaya hai
+  if (dateStr.includes("T")) {
+    const [datePart, timePart] = dateStr.split("T");
+
+    const [year, month, day] = datePart.split("-");
+    const [hours, minutes] = timePart.split(":");
+
+    return `${day}/${month}/${year} ${hours}:${minutes}:00`;
+  }
+
+  // fallback (sirf date ho)
+  if (dateStr.includes("-")) {
+    const [year, month, day] = dateStr.split("-");
+    return `${day}/${month}/${year} 00:00:00`;
+  }
+
+  return dateStr;
 }
 
 function parseDate(dateStr) {

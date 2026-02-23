@@ -50,24 +50,47 @@ app.use((req, res, next) => {
 // ============================================
 // Import Routes
 // ============================================
+
+// Auth Routes
 const authRoutes = require("./routes/authRoutes");
+
+// NBD Routes (END USER LEADS FMS only)
 const nbdinRoutes = require("./routes/nbdApi/nbdinRoutes");
-const fieldVisitRoutes = require("./routes/nbdApi/fieldVisitRoutes");
-const afterFieldVisitRoutes = require("./routes/nbdApi/afterFieldVisitRoutes");
-const meetingNbdRoutes = require("./routes/nbdApi/meetingNbdRoutes");
-const bookingNbdRoutes = require("./routes/nbdApi/bookingNbdRoutes");
+const nbdFieldVisitRoutes = require("./routes/nbdApi/fieldVisitRoutes");
+const nbdAfterFieldVisitRoutes = require("./routes/nbdApi/afterFieldVisitRoutes");
+const nbdMeetingRoutes = require("./routes/nbdApi/meetingNbdRoutes");
+const nbdBookingRoutes = require("./routes/nbdApi/bookingNbdRoutes");
+
+// CP Routes (Channel Partener Lead FMS only)
+const cpFollowupRoutes = require("./routes/cp/cpFollowupRoutes");
+const cpFieldVisitRoutes = require("./routes/cp/cpFieldVisitRoutes");
+const cpAfterFieldVisitRoutes = require("./routes/cp/cpAfterFieldVisitRoutes");
+const cpMeetingRoutes = require("./routes/cp/cpMeetingRoutes");
+const cpBookingRoutes = require("./routes/cp/cpBookingRoutes");
+const cpLeadFormRoutes = require("./routes/cp/cpLeadFormRoutes");
 
 // ============================================
 // Use Routes
 // ============================================
-app.use("/api/auth", authRoutes); // ✅ NEW - Auth routes
 
-// Existing routes (will protect these later)
+// Auth
+app.use("/api/auth", authRoutes);
+
+// NBD APIs (BDM1 + Admin)
 app.use("/api/leads", nbdinRoutes);
-app.use("/api/field-visit", fieldVisitRoutes);
-app.use("/api/after-field-visit", afterFieldVisitRoutes);
-app.use("/api/meeting-nbd", meetingNbdRoutes);
-app.use("/api/booking-nbd", bookingNbdRoutes);
+app.use("/api/field-visit", nbdFieldVisitRoutes);
+app.use("/api/after-field-visit", nbdAfterFieldVisitRoutes);
+app.use("/api/meeting-nbd", nbdMeetingRoutes);
+app.use("/api/booking-nbd", nbdBookingRoutes);
+
+// CP APIs (BDM2 + Admin)
+app.use("/api/cp/followup", cpFollowupRoutes);
+app.use("/api/cp/field-visit", cpFieldVisitRoutes);
+app.use("/api/cp/after-field-visit", cpAfterFieldVisitRoutes);
+app.use("/api/cp/meeting", cpMeetingRoutes);
+app.use("/api/cp/booking", cpBookingRoutes);
+app.use("/api/cp/lead-form", cpLeadFormRoutes);
+
 
 // ============================================
 // Health Check Route
@@ -106,9 +129,22 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`🔐 Auth API: /api/auth/login`);
-  console.log(`📊 NBD API: /api/leads/nbdin`);
-  console.log(`📊 Field Visit API: /api/field-visit/list`);
-  console.log(`📊 After Field Visit API: /api/after-field-visit/list`);
-  console.log(`📊 Meeting NBD API: /api/meeting-nbd/list`);
-  console.log(`📊 Booking NBD API: /api/booking-nbd/list`);
+  console.log(`\n📊 ===== NBD APIs (END USER) =====`);
+  console.log(`   Follow-up:         /api/leads/nbdin`);
+  console.log(`   Field Visit:       /api/field-visit/list`);
+  console.log(`   After Field Visit: /api/after-field-visit/list`);
+  console.log(`   Meeting:           /api/meeting-nbd/list`);
+  console.log(`   Booking:           /api/booking-nbd/list`);
+  console.log(`\n📊 ===== CP APIs (Channel Partner) =====`);
+  console.log(`   Follow-up:         /api/cp/followup/can-contact/list`);
+  console.log(`   Follow-up:         /api/cp/followup/cannot-contact/list`);
+  console.log(`   Field Visit:       /api/cp/field-visit/can-contact/list`);
+  console.log(`   Field Visit:       /api/cp/field-visit/cannot-contact/list`);
+  console.log(`   After Field Visit: /api/cp/after-field-visit/can-contact/list`);
+  console.log(`   After Field Visit: /api/cp/after-field-visit/cannot-contact/list`);
+  console.log(`   Meeting:           /api/cp/meeting/can-contact/list`);
+  console.log(`   Meeting:           /api/cp/meeting/cannot-contact/list`);
+  console.log(`   Booking:           /api/cp/booking/can-contact/list`);
+  console.log(`   Booking:           /api/cp/booking/cannot-contact/list`);
+  console.log(`   Lead Form:         /api/cp/lead-form/list`);
 });

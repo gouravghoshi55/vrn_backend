@@ -3,11 +3,8 @@ const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
-const SHEET_NAME = "END USER LEADS FMS";  // ← Ab sirf yeh sheet
+const SHEET_NAME = "END USER LEADS FMS"; 
 
-// ============================================
-// Helpers
-// ============================================
 
 function getCurrentTimestamp() {
   const now = new Date();

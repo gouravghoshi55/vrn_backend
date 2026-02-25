@@ -3,7 +3,7 @@ const router = express.Router();
 
 const CP_SPREADSHEET_ID = process.env.CP_SPREADSHEET_ID;
 const CP_LEAD_SHEET = "Channel Partner FMS";
-const DATA_START_ROW = 8; // Data starts from row 8
+const DATA_START_ROW = 8;
 
 // ============================================
 // Helpers
@@ -20,13 +20,9 @@ function parseDate(dateStr) {
 }
 
 function formatDateTimeForSheet(input) {
-  // Input: datetime-local string like "2026-02-25T14:30"
   if (!input || !input.includes("T")) return "";
-
   const [datePart, timePart] = input.split("T");
   const [year, month, day] = datePart.split("-");
-  
-  // Google Sheets friendly format: DD/MM/YYYY HH:mm:ss
   return `${day}/${month}/${year} ${timePart}:00`;
 }
 
@@ -46,6 +42,11 @@ function getCurrentISTTimestamp() {
 }
 
 // ============================================
+// FINAL STATUSES - These close the lead
+// ============================================
+const FINAL_STATUSES = ["Qualified", "Not Interested", "Not Qualified"];
+
+// ============================================
 // GET /list - Fetch pending leads
 // ============================================
 
@@ -55,35 +56,34 @@ router.get("/list", async (req, res) => {
 
     const response = await req.sheets.spreadsheets.values.get({
       spreadsheetId: CP_SPREADSHEET_ID,
-      range: `'${CP_LEAD_SHEET}'!A${DATA_START_ROW}:V`, // A to V (up to Can Contact)
+      range: `'${CP_LEAD_SHEET}'!A${DATA_START_ROW}:V`,
     });
 
     const rows = response.data.values || [];
     const filteredLeads = [];
 
     rows.forEach((row, index) => {
-      // 0-based column indices
-      const uniqueId           = row[1]  || ""; // B
-      const customerName       = row[2]  || ""; // C
-      const customerContact    = row[3]  || ""; // D
-      const interestedIn       = row[4]  || ""; // E
-      const leadGenBy          = row[5]  || ""; // F
-      const leadGenNumber      = row[6]  || ""; // G
-      const leadGenName        = row[7]  || ""; // H
-      const leadRemark         = row[8]  || ""; // I
-      const followUpCountStr   = row[9]  || "0"; // J
-      const planned            = row[10] || ""; // K
-      const actual             = row[11] || ""; // L
-      const status             = row[12] || ""; // M
-      const projectSelection   = row[13] || ""; // N
-      const importantNote      = row[14] || ""; // O
-      const purpose            = row[15] || ""; // P
-      const nextFollowUp       = row[16] || ""; // Q
-      const sendWhatsapp       = row[17] || "No"; // R
-      const plannedSiteVisit   = row[18] || ""; // S
-      const remark             = row[19] || ""; // T
-      const notQualifiedReason = row[20] || ""; // U
-      const canContact         = row[21] || ""; // V
+      const uniqueId           = row[1]  || "";
+      const customerName       = row[2]  || "";
+      const customerContact    = row[3]  || "";
+      const interestedIn       = row[4]  || "";
+      const leadGenBy          = row[5]  || "";
+      const leadGenNumber      = row[6]  || "";
+      const leadGenName        = row[7]  || "";
+      const leadRemark         = row[8]  || "";
+      const followUpCountStr   = row[9]  || "0";
+      const planned            = row[10] || "";
+      const actual             = row[11] || "";
+      const status             = row[12] || "";
+      const projectSelection   = row[13] || "";
+      const importantNote      = row[14] || "";
+      const purpose            = row[15] || "";
+      const nextFollowUp       = row[16] || "";
+      const sendWhatsapp       = row[17] || "No";
+      const plannedSiteVisit   = row[18] || "";
+      const remark             = row[19] || "";
+      const notQualifiedReason = row[20] || "";
+      const canContact         = row[21] || "";
 
       // Show only pending: Planned has value AND Actual is empty
       if (planned.trim() && !actual.trim()) {
@@ -146,11 +146,11 @@ router.post("/update", async (req, res) => {
       projectSelection = "",
       importantNote = "",
       purpose = "",
-      plannedSiteVisit = "",        // datetime-local
+      plannedSiteVisit = "",
       sendWhatsapp = "No",
       whatsappProject = "",
       alternateWhatsapp = "",
-      nextFollowUp = "",            // datetime-local
+      nextFollowUp = "",
       notQualifiedReason = "",
       canContact = "Yes",
       currentFollowUpCount = 0,
@@ -169,86 +169,141 @@ router.post("/update", async (req, res) => {
     const newFollowUpCount = Number(currentFollowUpCount) + 1;
     const updates = [];
 
-    // Always update these
-    updates.push(
-      // J - FollowUp Count
-      { range: `'${CP_LEAD_SHEET}'!J${rowIndex}`, values: [[newFollowUpCount]] },
-      // L - Actual (timestamp of this update)
-      { range: `'${CP_LEAD_SHEET}'!L${rowIndex}`, values: [[timestamp]] },
-      // M - Status
-      { range: `'${CP_LEAD_SHEET}'!M${rowIndex}`, values: [[status]] },
-      // R - Send Details on WhatsApp
-      { range: `'${CP_LEAD_SHEET}'!R${rowIndex}`, values: [[sendWhatsapp]] }
-    );
+    // ============================================
+    // Check if this is a FINAL status
+    // ============================================
+    const isFinalStatus = FINAL_STATUSES.includes(status);
 
+    console.log(`📌 Status Type: ${isFinalStatus ? "FINAL (will set Actual)" : "INTERMEDIATE (no Actual)"}`);
+
+    // ============================================
+    // Always update these columns
+    // ============================================
+    
+    // J - FollowUp Count (always increment)
+    updates.push({
+      range: `'${CP_LEAD_SHEET}'!J${rowIndex}`,
+      values: [[newFollowUpCount]],
+    });
+
+    // M - Status (always update)
+    updates.push({
+      range: `'${CP_LEAD_SHEET}'!M${rowIndex}`,
+      values: [[status]],
+    });
+
+    // R - Send Details on WhatsApp (always update)
+    updates.push({
+      range: `'${CP_LEAD_SHEET}'!R${rowIndex}`,
+      values: [[sendWhatsapp]],
+    });
+
+    // ============================================
+    // L - Actual Date (ONLY for final statuses)
+    // ============================================
+    if (isFinalStatus) {
+      updates.push({
+        range: `'${CP_LEAD_SHEET}'!L${rowIndex}`,
+        values: [[timestamp]],
+      });
+      console.log(`✅ Setting Actual date: ${timestamp}`);
+    } else {
+      console.log(`⏭️ Skipping Actual date (intermediate status)`);
+    }
+
+    // ============================================
     // Remarks (T) - always update if provided
-    if (remarks.trim()) {
+    // ============================================
+    let finalRemarks = remarks.trim();
+
+    // Add WhatsApp note to remarks if applicable
+    if (sendWhatsapp === "Yes" && whatsappProject) {
+      const altNum = alternateWhatsapp.trim() || "Same as main number";
+      const whatsappNote = `WhatsApp Sent: ${whatsappProject} (Alt: ${altNum})`;
+      finalRemarks = finalRemarks ? `${finalRemarks}\n${whatsappNote}` : whatsappNote;
+    }
+
+    if (finalRemarks) {
       updates.push({
         range: `'${CP_LEAD_SHEET}'!T${rowIndex}`,
-        values: [[remarks]],
+        values: [[finalRemarks]],
       });
     }
 
-    let whatsappNote = "";
-    if (sendWhatsapp === "Yes" && whatsappProject) {
-      const altNum = alternateWhatsapp.trim() || "Same as main number";
-      whatsappNote = `\nWhatsApp Sent: ${whatsappProject} (Alt: ${altNum})`;
-    }
+    // ============================================
+    // Status-specific updates
+    // ============================================
 
-    // Status-specific logic
     switch (status) {
       case "Qualified":
+        // Project Selection (N)
         if (projectSelection) {
-          updates.push({ range: `'${CP_LEAD_SHEET}'!N${rowIndex}`, values: [[projectSelection]] });
+          updates.push({
+            range: `'${CP_LEAD_SHEET}'!N${rowIndex}`,
+            values: [[projectSelection]],
+          });
         }
+
+        // Important Note (O)
         if (importantNote) {
-          updates.push({ range: `'${CP_LEAD_SHEET}'!O${rowIndex}`, values: [[importantNote]] });
+          updates.push({
+            range: `'${CP_LEAD_SHEET}'!O${rowIndex}`,
+            values: [[importantNote]],
+          });
         }
+
+        // Purpose (P)
         if (purpose) {
-          updates.push({ range: `'${CP_LEAD_SHEET}'!P${rowIndex}`, values: [[purpose]] });
+          updates.push({
+            range: `'${CP_LEAD_SHEET}'!P${rowIndex}`,
+            values: [[purpose]],
+          });
         }
+
+        // Planned Site Visit Date (S)
         if (plannedSiteVisit) {
           const formatted = formatDateTimeForSheet(plannedSiteVisit);
-          updates.push({ range: `'${CP_LEAD_SHEET}'!S${rowIndex}`, values: [[formatted]] });
-          // Also update Planned (K) for visibility
-          updates.push({ range: `'${CP_LEAD_SHEET}'!K${rowIndex}`, values: [[formatted]] });
-        }
-        if (canContact) {
-          updates.push({ range: `'${CP_LEAD_SHEET}'!V${rowIndex}`, values: [[canContact]] });
-        }
-        if (whatsappNote) {
           updates.push({
-            range: `'${CP_LEAD_SHEET}'!T${rowIndex}`,
-            values: [[(remarks + whatsappNote).trim()]],
+            range: `'${CP_LEAD_SHEET}'!S${rowIndex}`,
+            values: [[formatted]],
+          });
+        }
+
+        // Can Contact (V)
+        if (canContact) {
+          updates.push({
+            range: `'${CP_LEAD_SHEET}'!V${rowIndex}`,
+            values: [[canContact]],
           });
         }
         break;
 
       case "Next Followup Required":
+        // Next FollowUp Date (Q)
         if (nextFollowUp) {
           const formatted = formatDateTimeForSheet(nextFollowUp);
-          updates.push({ range: `'${CP_LEAD_SHEET}'!Q${rowIndex}`, values: [[formatted]] });
-          // Update Planned (K) to next follow-up date
-          updates.push({ range: `'${CP_LEAD_SHEET}'!K${rowIndex}`, values: [[formatted]] });
-        }
-        if (whatsappNote) {
           updates.push({
-            range: `'${CP_LEAD_SHEET}'!T${rowIndex}`,
-            values: [[(remarks + whatsappNote).trim()]],
+            range: `'${CP_LEAD_SHEET}'!Q${rowIndex}`,
+            values: [[formatted]],
           });
+
+          // Update Planned (K) to next follow-up date
+          // So lead appears again on that date
+          updates.push({
+            range: `'${CP_LEAD_SHEET}'!K${rowIndex}`,
+            values: [[formatted]],
+          });
+          console.log(`📅 Updated Planned date to: ${formatted}`);
         }
         break;
 
       case "No Connection Yet":
-        if (whatsappNote) {
-          updates.push({
-            range: `'${CP_LEAD_SHEET}'!T${rowIndex}`,
-            values: [[(remarks + whatsappNote).trim()]],
-          });
-        }
+        // No specific fields, just WhatsApp if sent
+        // Lead stays in pending list with same planned date
         break;
 
       case "Not Qualified":
+        // Not Qualified Reason (U)
         if (notQualifiedReason.trim()) {
           updates.push({
             range: `'${CP_LEAD_SHEET}'!U${rowIndex}`,
@@ -258,7 +313,8 @@ router.post("/update", async (req, res) => {
         break;
 
       case "Not Interested":
-        // No extra fields
+        // No extra fields needed
+        // Actual date is set (handled above)
         break;
 
       default:
@@ -268,7 +324,11 @@ router.post("/update", async (req, res) => {
         });
     }
 
+    // ============================================
     // Execute batch update
+    // ============================================
+    console.log(`📤 Executing ${updates.length} cell updates...`);
+
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: CP_SPREADSHEET_ID,
       requestBody: {
@@ -281,10 +341,15 @@ router.post("/update", async (req, res) => {
       },
     });
 
+    console.log(`✅ Lead updated successfully!`);
+
     res.json({
       success: true,
-      message: "Lead updated successfully",
+      message: isFinalStatus 
+        ? "Lead closed successfully" 
+        : "Lead updated, will appear in next followup",
       newFollowUpCount,
+      isFinalStatus,
     });
   } catch (error) {
     console.error("❌ Update failed:", error.message);

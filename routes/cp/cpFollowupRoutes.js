@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const CP_SHEET_NAME = "Channel Partener Lead FMS";
+const CP_SHEET_NAME = "Channel Partner Lead FMS";
 
 // --- HELPER FUNCTIONS ---
 

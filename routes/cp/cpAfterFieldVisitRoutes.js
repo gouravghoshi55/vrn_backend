@@ -62,7 +62,7 @@ async function getFilteredCPLeads(sheets, category) {
         if (!categoryMatch) return null;
 
         // Filter condition
-        if ((plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up") {
+        if ((plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up" || status ==="") {
           // ===== ALL REMARKS COLUMNS =====
           const oldRemarks = getCol(11);           // L
           const previousRemarksDate = getCol(13);  // N

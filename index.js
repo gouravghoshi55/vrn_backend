@@ -68,6 +68,7 @@ const cpAfterFieldVisitRoutes = require("./routes/cp/cpAfterFieldVisitRoutes");
 const cpMeetingRoutes = require("./routes/cp/cpMeetingRoutes");
 const cpBookingRoutes = require("./routes/cp/cpBookingRoutes");
 const cpLeadFormRoutes = require("./routes/cp/cpLeadFormRoutes");
+const cpContactUpdateRoutes = require('./routes/cp/cpContactUpdateRoutes');
 
 // ============================================
 // Use Routes
@@ -90,6 +91,7 @@ app.use("/api/cp/after-field-visit", cpAfterFieldVisitRoutes);
 app.use("/api/cp/meeting", cpMeetingRoutes);
 app.use("/api/cp/booking", cpBookingRoutes);
 app.use("/api/cp/lead-form", cpLeadFormRoutes);
+app.use('/cp', cpContactUpdateRoutes);
 
 
 // ============================================

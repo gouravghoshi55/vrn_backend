@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const CP_SHEET_NAME = "Channel Partner Lead FMS"; // ✅ Only CP sheet
+const CP_SHEET_NAME = "Channel Partner Lead FMS"; 
 
 // ============================================
 // Helpers

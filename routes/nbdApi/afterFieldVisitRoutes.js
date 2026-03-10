@@ -188,7 +188,7 @@ router.post("/update", async (req, res) => {
     if (
       rescheduleDate &&
       String(rescheduleDate).trim() !== "" &&
-      ["No conversation", "Next Follow Up"].includes(status || "")
+      ["No conversation", "Next Follow Up","Next Field Visit Required"].includes(status || "")
     ) {
       const formatted = formatDateToSheetStyle(rescheduleDate);
       console.log("→ Processing RESCHEDULE to:", formatted);

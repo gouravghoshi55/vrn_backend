@@ -54,7 +54,7 @@ async function getFilteredLeads(sheets) {
         const status = getCol(28);      // AC
 
         // Filter: show if planned exists and actual empty OR specific status
-        if ((plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up") {
+        if ((plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up" || status ==="Next Field Visit Required") {
           // ===== ALL REMARKS COLUMNS =====
           const oldRemarks = getCol(11);           // L
           const previousRemarksDate = getCol(13);  // N

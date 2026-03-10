@@ -86,7 +86,7 @@ async function getFilteredCPLeads(sheets, category) {
       // --- FILTER BY CATEGORY (Can Contact / Cannot Contact) ---
       const categoryMatch =
         (category === "can-contact" && canContact === "Yes") ||
-        (category === "cannot-contact" && canContact === "No");
+        (category === "cannot-contact" && canContact === "No" || canContact ==="");
 
       if (!categoryMatch) return; // Skip if category doesn't match
 

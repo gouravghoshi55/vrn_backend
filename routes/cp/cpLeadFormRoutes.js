@@ -83,7 +83,7 @@ router.get("/list", async (req, res) => {
       const plannedSiteVisit   = row[18] || "";
       const remark             = row[19] || "";
       const notQualifiedReason = row[20] || "";
-      const canContact         = row[21] || "";
+      const canContact         = row[21] || "No";
 
       // Show only pending: Planned has value AND Actual is empty
       if (planned.trim() && !actual.trim()) {

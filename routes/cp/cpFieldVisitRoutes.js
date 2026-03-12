@@ -82,8 +82,7 @@ async function getFilteredCPLeads(sheets, category) {
       // ===== CATEGORY FILTER =====
       const categoryMatch =
         (category === "can-contact" && canContact === "Yes") ||
-        (category === "cannot-contact" && canContact === "No");
-
+        (category === "cannot-contact" && (canContact === "No" || canContact ===""));
       if (!categoryMatch) return;
 
       // Display logic: Y > T > L

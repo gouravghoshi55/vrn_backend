@@ -89,8 +89,10 @@ async function getFilteredLeads(sheets) {
 
     let displayRemarks = currentRemarks || recentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
 
-    const showRow = plannedDate &&
-      (!status || status.trim().toLowerCase() === "rescheduled");
+ const showRow = plannedDate &&
+  (!status || 
+   status.trim().toLowerCase() === "rescheduled" || 
+   status.trim().toLowerCase() === "next field visit required");  // ← lowercase karo
 
     if (showRow) {
       if (!status.trim()) status = "Pending";

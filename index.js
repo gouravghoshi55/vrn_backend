@@ -70,6 +70,9 @@ const cpBookingRoutes = require("./routes/cp/cpBookingRoutes");
 const cpLeadFormRoutes = require("./routes/cp/cpLeadFormRoutes");
 const cpContactUpdateRoutes = require('./routes/cp/cpContactUpdateRoutes');
 
+// Add this with other route imports
+const leadSearchRoutes = require("./routes/leadSearch");
+
 // ============================================
 // Use Routes
 // ============================================
@@ -92,6 +95,9 @@ app.use("/api/cp/meeting", cpMeetingRoutes);
 app.use("/api/cp/booking", cpBookingRoutes);
 app.use("/api/cp/lead-form", cpLeadFormRoutes);
 app.use('/cp', cpContactUpdateRoutes);
+
+// Add this with other route registrations
+app.use("/api/leads", leadSearchRoutes);
 
 
 // ============================================

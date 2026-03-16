@@ -2,11 +2,10 @@ const express = require("express");
 const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-
-const SHEET_NAME = "END USER LEADS FMS";   // ← sirf yeh sheet ab kaam karegi
+const SHEET_NAME = "END USER LEADS FMS";
 
 // ============================================
-// Helpers (same as before)
+// Helpers
 // ============================================
 
 function getCurrentTimestamp() {
@@ -23,22 +22,17 @@ function getCurrentTimestamp() {
 function getPlannedDateTime(dateStr) {
   if (!dateStr) return "";
 
-  // agar already DD/MM/YYYY HH:mm:ss format me hai → use as is
   if (dateStr.includes(":") && dateStr.includes("/")) {
     return dateStr.trim();
   }
 
-  // agar datetime-local (2026-02-26T14:44) aaya hai
   if (dateStr.includes("T")) {
     const [datePart, timePart] = dateStr.split("T");
-
     const [year, month, day] = datePart.split("-");
     const [hours, minutes] = timePart.split(":");
-
     return `${day}/${month}/${year} ${hours}:${minutes}:00`;
   }
 
-  // fallback (sirf date ho)
   if (dateStr.includes("-")) {
     const [year, month, day] = dateStr.split("-");
     return `${day}/${month}/${year} 00:00:00`;
@@ -60,24 +54,24 @@ function parseDate(dateStr) {
 }
 
 // ============================================
-// FETCH LIST - Only END USER sheet
+// FETCH LIST
 // ============================================
 
 async function getFilteredLeads(sheets) {
+  // ✅ CHANGED: Extended to AU (46)
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${SHEET_NAME}'!A8:AL`,
+    range: `'${SHEET_NAME}'!A8:AU`, // ← Changed from AL to AU
   });
 
   const rows = response.data.values || [];
   const filtered = [];
 
   rows.forEach((row, index) => {
-    const plannedDate = row[33] ? row[33].trim() : "";         // AH
-    const actualDate = row[34] ? row[34].trim() : "";          // AI
-    let status = row[35] ? row[35].trim() : "";                // AJ
+    const plannedDate = row[33] ? row[33].trim() : "";
+    const actualDate = row[34] ? row[34].trim() : "";
+    let status = row[35] ? row[35].trim() : "";
 
-    // All remarks columns
     const oldRemarks = row[11] ? row[11].trim() : "";
     const previousRemarksDate = row[13] ? row[13].trim() : "";
     const previousRemarks = row[19] ? row[19].trim() : "";
@@ -87,19 +81,21 @@ async function getFilteredLeads(sheets) {
     const recentRemarks = row[32] ? row[32].trim() : "";
     const currentRemarks = row[37] ? row[37].trim() : "";
 
-    let displayRemarks = currentRemarks || recentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
+    let displayRemarks =
+      currentRemarks || recentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
 
- const showRow = plannedDate &&
-  (!status || 
-   status.trim().toLowerCase() === "rescheduled" || 
-   status.trim().toLowerCase() === "next field visit required");  // ← lowercase karo
+    const showRow =
+      plannedDate &&
+      (!status ||
+        status.trim().toLowerCase() === "rescheduled" ||
+        status.trim().toLowerCase() === "next field visit required");
 
     if (showRow) {
       if (!status.trim()) status = "Pending";
 
       filtered.push({
         rowIndex: index + 8,
-        sheetName: SHEET_NAME,          // fixed
+        sheetName: SHEET_NAME,
         uniqueId: row[1] || "",
         customerName: row[2] || "",
         customerContact: row[3] || "",
@@ -110,7 +106,7 @@ async function getFilteredLeads(sheets) {
         leadGenName: row[8] || "",
         plannedDate,
         status,
-        
+        fieldVisitCount: row[46] || "0", // ✅ NEW: AU column (index 46)
         remarks: displayRemarks,
         oldRemarks,
         previousRemarks,
@@ -133,8 +129,6 @@ async function getFilteredLeads(sheets) {
 router.get("/list", async (req, res) => {
   try {
     const leads = await getFilteredLeads(req.sheets);
-
-    // Sort by planned date
     leads.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
 
     res.json({
@@ -150,12 +144,18 @@ router.get("/list", async (req, res) => {
 
 router.post("/update", async (req, res) => {
   try {
-    const { rowIndex, status, rescheduleDate, remarks } = req.body;
+    const { rowIndex, status, rescheduleDate, nextFieldVisitDate, remarks } = req.body;
 
-    // sheetName ab frontend se nahi lenge — fixed hai
     const sheetName = SHEET_NAME;
 
-    console.log("Update Payload:", { sheetName, rowIndex, status, rescheduleDate, remarks });
+    console.log("Update Payload:", {
+      sheetName,
+      rowIndex,
+      status,
+      rescheduleDate,
+      nextFieldVisitDate,
+      remarks,
+    });
 
     if (!rowIndex) {
       return res.status(400).json({ success: false, error: "Missing rowIndex" });
@@ -164,7 +164,7 @@ router.post("/update", async (req, res) => {
     const timestamp = getCurrentTimestamp();
     const updates = [];
 
-    // Followup Count (Z column) increment
+    // ✅ Followup Count (Z column) - unchanged
     let currentFollowupCount = 0;
     try {
       const countRes = await req.sheets.spreadsheets.values.get({
@@ -183,6 +183,32 @@ router.post("/update", async (req, res) => {
       values: [[newFollowupCount]],
     });
 
+    // ✅ NEW: Field Visit Count (AU column)
+    if (status === "Next Field Visit Required") {
+      let currentFieldVisitCount = 0;
+      try {
+        const fieldVisitRes = await req.sheets.spreadsheets.values.get({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `'${sheetName}'!AU${rowIndex}`,
+        });
+        const val = fieldVisitRes.data.values?.[0]?.[0];
+        currentFieldVisitCount = val ? parseInt(String(val).trim(), 10) || 0 : 0;
+      } catch (e) {
+        console.warn("Could not read field visit count:", e.message);
+      }
+
+      const newFieldVisitCount = currentFieldVisitCount + 1;
+
+      updates.push({
+        range: `'${sheetName}'!AU${rowIndex}`,
+        values: [[newFieldVisitCount]],
+      });
+
+      console.log(
+        `✅ Field Visit Count incremented: ${currentFieldVisitCount} → ${newFieldVisitCount}`
+      );
+    }
+
     // Main update logic
     if (rescheduleDate && String(rescheduleDate).trim() !== "") {
       const newPlanned = getPlannedDateTime(rescheduleDate);
@@ -195,6 +221,20 @@ router.post("/update", async (req, res) => {
         values: [["Rescheduled"]],
       });
     } 
+    // ✅ NEW: Handle Next Field Visit Required
+    else if (status === "Next Field Visit Required" && nextFieldVisitDate && String(nextFieldVisitDate).trim() !== "") {
+      const newPlanned = getPlannedDateTime(nextFieldVisitDate);
+      
+      updates.push({
+        range: `'${sheetName}'!AH${rowIndex}`, // Update planned date
+        values: [[newPlanned]],
+      });
+      
+      updates.push({
+        range: `'${sheetName}'!AJ${rowIndex}`, // Update status
+        values: [["Next Field Visit Required"]],
+      });
+    }
     else if (["Not Interested", "Negotiation Failed", "Deal Not Done"].includes(status)) {
       updates.push({
         range: `'${sheetName}'!AI${rowIndex}`,
@@ -204,13 +244,11 @@ router.post("/update", async (req, res) => {
         range: `'${sheetName}'!AJ${rowIndex}`,
         values: [[status]],
       });
-      // Optional: clear planned date
       updates.push({
         range: `'${sheetName}'!AH${rowIndex}`,
         values: [[""]],
       });
-    } 
-    else {
+    } else {
       updates.push({
         range: `'${sheetName}'!AI${rowIndex}`,
         values: [[timestamp]],
@@ -239,11 +277,13 @@ router.post("/update", async (req, res) => {
 
     res.json({
       success: true,
-      message: rescheduleDate 
-        ? "Rescheduled Successfully" 
+      message: rescheduleDate
+        ? "Rescheduled Successfully"
+        : status === "Next Field Visit Required"
+        ? "Next Field Visit Scheduled Successfully"
         : ["Not Interested", "Negotiation Failed", "Deal Not Done"].includes(status)
-          ? "Marked as " + status
-          : "Updated Successfully",
+        ? "Marked as " + status
+        : "Updated Successfully",
       newFollowupCount,
     });
   } catch (err) {

@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const NBD_SHEET_NAME = "END USER LEADS FMS"; // ✅ Only END USER sheet
+const NBD_SHEET_NAME = "END USER LEADS FMS";
 
 // ======================================================
 // HELPERS
@@ -38,9 +38,10 @@ function formatDateToSheetStyle(dateInput) {
 
 async function getFilteredLeads(sheets) {
   try {
+    // ✅ CHANGED: Extended range to AU (46) to include Field Visit Count
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${NBD_SHEET_NAME}'!A8:AG`,
+      range: `'${NBD_SHEET_NAME}'!A8:AU`, // ← CHANGED from AG to AU
     });
 
     const rows = response.data.values || [];
@@ -53,17 +54,14 @@ async function getFilteredLeads(sheets) {
         const actualDate = getCol(27);  // AB
         const status = getCol(28);      // AC
 
-        // Filter: show if planned exists and actual empty OR specific status
-        if ((plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up" || status ==="Next Field Visit Required") {
-          // ===== ALL REMARKS COLUMNS =====
-          const oldRemarks = getCol(11);           // L
-          const previousRemarksDate = getCol(13);  // N
-          const previousRemarks = getCol(19);      // T
-          const latestOldRemarks = getCol(24);     // Y
-          const latestOldRemarksDate = getCol(21); // V
-          const currentRemarks = getCol(32);       // AG
+        if ((plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up" || status === "Next Field Visit Required") {
+          const oldRemarks = getCol(11);
+          const previousRemarksDate = getCol(13);
+          const previousRemarks = getCol(19);
+          const latestOldRemarks = getCol(24);
+          const latestOldRemarksDate = getCol(21);
+          const currentRemarks = getCol(32);
 
-          // Display priority: AG > Y > T > L
           let displayRemarks = currentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
 
           return {
@@ -80,7 +78,8 @@ async function getFilteredLeads(sheets) {
             importantNote: getCol(10),
             plannedDate,
             status: status || "Pending",
-            followUpCount: getCol(31) || "0", // AF
+            followUpCount: getCol(31) || "0", // AF - Call count
+            fieldVisitCount: getCol(46) || "0", // ✅ NEW: AU - Field Visit count
             remarks: displayRemarks,
             oldRemarks: oldRemarks,
             previousRemarks: previousRemarks,
@@ -154,6 +153,7 @@ router.post("/update", async (req, res) => {
       });
     }
 
+    // ✅ AF Column - Follow Up Count (unchanged)
     let currentCount = 0;
     try {
       const countRes = await req.sheets.spreadsheets.values.get({
@@ -163,18 +163,42 @@ router.post("/update", async (req, res) => {
       const val = countRes.data.values?.[0]?.[0];
       currentCount = parseInt(val) || 0;
     } catch (e) {
-      console.warn("Could not read count:", e.message);
+      console.warn("Could not read AF count:", e.message);
     }
 
     const newCount = currentCount + 1;
     const updates = [];
     const timestamp = getCurrentTimestamp();
 
-    // Always increment count (AF)
+    // Always increment AF count
     updates.push({
       range: `'${NBD_SHEET_NAME}'!AF${rowIndex}`,
       values: [[newCount]],
     });
+
+    // ✅ NEW: Handle AU Column - Field Visit Count
+    if (status === "Next Field Visit Required") {
+      let currentFieldVisitCount = 0;
+      try {
+        const fieldVisitRes = await req.sheets.spreadsheets.values.get({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `'${NBD_SHEET_NAME}'!AU${rowIndex}`,
+        });
+        const val = fieldVisitRes.data.values?.[0]?.[0];
+        currentFieldVisitCount = parseInt(val) || 0;
+      } catch (e) {
+        console.warn("Could not read AU field visit count:", e.message);
+      }
+
+      const newFieldVisitCount = currentFieldVisitCount + 1;
+      
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!AU${rowIndex}`,
+        values: [[newFieldVisitCount]],
+      });
+
+      console.log(`✅ Field Visit Count incremented: ${currentFieldVisitCount} → ${newFieldVisitCount}`);
+    }
 
     // Always update new remarks (AG)
     if (remarks && String(remarks).trim()) {
@@ -188,23 +212,23 @@ router.post("/update", async (req, res) => {
     if (
       rescheduleDate &&
       String(rescheduleDate).trim() !== "" &&
-      ["No conversation", "Next Follow Up","Next Field Visit Required"].includes(status || "")
+      ["No conversation", "Next Follow Up", "Next Field Visit Required"].includes(status || "")
     ) {
       const formatted = formatDateToSheetStyle(rescheduleDate);
       console.log("→ Processing RESCHEDULE to:", formatted);
 
       updates.push({
-        range: `'${NBD_SHEET_NAME}'!AA${rowIndex}`, // Planned
+        range: `'${NBD_SHEET_NAME}'!AA${rowIndex}`,
         values: [[formatted]],
       });
 
       updates.push({
-        range: `'${NBD_SHEET_NAME}'!AE${rowIndex}`, // Next FollowUp Date
+        range: `'${NBD_SHEET_NAME}'!AE${rowIndex}`,
         values: [[formatted]],
       });
 
       updates.push({
-        range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`, // Status
+        range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`,
         values: [[status]],
       });
     }
@@ -212,20 +236,17 @@ router.post("/update", async (req, res) => {
     else {
       console.log("→ Processing DONE / STATUS UPDATE:", status);
 
-      // Actual timestamp (AB)
       updates.push({
         range: `'${NBD_SHEET_NAME}'!AB${rowIndex}`,
         values: [[timestamp]],
       });
 
-      // Status (AC)
       let finalStatus = status || "Done";
       updates.push({
         range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`,
         values: [[finalStatus]],
       });
 
-      // Deal Meeting Date (AD)
       if (dealMeetingDate) {
         const formattedDeal = formatDateToSheetStyle(dealMeetingDate);
         updates.push({

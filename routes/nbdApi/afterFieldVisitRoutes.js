@@ -32,19 +32,34 @@ function formatDateToSheetStyle(dateInput) {
   return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 
+// ✅ Helper: Get doerTag from user info
+function getDoerTag(user) {
+  if (!user) return null;
+  if (user.role === "admin" || user.assignedModule === "all") {
+    return null; // Admin sees all
+  }
+  const emailToDoerMap = {
+    "bdm1@company.com": "BDM1",
+    "bdm2@company.com": "BDM2",
+  };
+  return emailToDoerMap[user.email?.toLowerCase()] || null;
+}
+
 // ======================================================
 // READ DATA - NBD After Field Visit
 // ======================================================
 
-async function getFilteredLeads(sheets) {
+async function getFilteredLeads(sheets, user) {
   try {
-    // ✅ CHANGED: Extended range to AU (46) to include Field Visit Count
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${NBD_SHEET_NAME}'!A8:AU`, // ← CHANGED from AG to AU
+      range: `'${NBD_SHEET_NAME}'!A8:AU`,
     });
 
     const rows = response.data.values || [];
+
+    // ✅ Get doer tag for current user
+    const doerTag = getDoerTag(user);
 
     return rows
       .map((row, index) => {
@@ -53,8 +68,14 @@ async function getFilteredLeads(sheets) {
         const plannedDate = getCol(26); // AA
         const actualDate = getCol(27);  // AB
         const status = getCol(28);      // AC
+        const doer = getCol(45);        // ✅ AS = index 44 (Doer column)
 
         if ((plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up" || status === "Next Field Visit Required") {
+          // ✅ DOER FILTER
+          if (doerTag && doer !== doerTag) {
+            return null; // Skip — not assigned to current user
+          }
+
           const oldRemarks = getCol(11);
           const previousRemarksDate = getCol(13);
           const previousRemarks = getCol(19);
@@ -78,14 +99,15 @@ async function getFilteredLeads(sheets) {
             importantNote: getCol(10),
             plannedDate,
             status: status || "Pending",
-            followUpCount: getCol(31) || "0", // AF - Call count
-            fieldVisitCount: getCol(46) || "0", // ✅ NEW: AU - Field Visit count
+            followUpCount: getCol(31) || "0",
+            fieldVisitCount: getCol(46) || "0",
             remarks: displayRemarks,
             oldRemarks: oldRemarks,
             previousRemarks: previousRemarks,
             previousRemarksDate: previousRemarksDate,
             latestOldRemarks: latestOldRemarks,
             latestOldRemarksDate: latestOldRemarksDate,
+            doer: doer, // ✅ Include doer in response
           };
         }
         return null;
@@ -105,7 +127,8 @@ router.get("/list", async (req, res) => {
   try {
     console.log("📊 Fetching NBD After Field Visit data (END USER only)...");
 
-    const leads = await getFilteredLeads(req.sheets);
+    // ✅ Pass user info for doer-based filtering
+    const leads = await getFilteredLeads(req.sheets, req.user);
 
     leads.sort((a, b) => {
       const parse = (d) => {
@@ -153,7 +176,6 @@ router.post("/update", async (req, res) => {
       });
     }
 
-    // ✅ AF Column - Follow Up Count (unchanged)
     let currentCount = 0;
     try {
       const countRes = await req.sheets.spreadsheets.values.get({
@@ -170,13 +192,11 @@ router.post("/update", async (req, res) => {
     const updates = [];
     const timestamp = getCurrentTimestamp();
 
-    // Always increment AF count
     updates.push({
       range: `'${NBD_SHEET_NAME}'!AF${rowIndex}`,
       values: [[newCount]],
     });
 
-    // ✅ NEW: Handle AU Column - Field Visit Count
     if (status === "Next Field Visit Required") {
       let currentFieldVisitCount = 0;
       try {
@@ -191,7 +211,7 @@ router.post("/update", async (req, res) => {
       }
 
       const newFieldVisitCount = currentFieldVisitCount + 1;
-      
+
       updates.push({
         range: `'${NBD_SHEET_NAME}'!AU${rowIndex}`,
         values: [[newFieldVisitCount]],
@@ -200,7 +220,6 @@ router.post("/update", async (req, res) => {
       console.log(`✅ Field Visit Count incremented: ${currentFieldVisitCount} → ${newFieldVisitCount}`);
     }
 
-    // Always update new remarks (AG)
     if (remarks && String(remarks).trim()) {
       updates.push({
         range: `'${NBD_SHEET_NAME}'!AG${rowIndex}`,
@@ -208,7 +227,6 @@ router.post("/update", async (req, res) => {
       });
     }
 
-    // RESCHEDULE CASE
     if (
       rescheduleDate &&
       String(rescheduleDate).trim() !== "" &&
@@ -231,9 +249,7 @@ router.post("/update", async (req, res) => {
         range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`,
         values: [[status]],
       });
-    }
-    // MARK DONE / OTHER STATUS
-    else {
+    } else {
       console.log("→ Processing DONE / STATUS UPDATE:", status);
 
       updates.push({
@@ -280,5 +296,7 @@ router.post("/update", async (req, res) => {
     });
   }
 });
+
+// NOTE: Assign endpoint is centralized in nbdinRoutes.js (/leads/nbdin/assign)
 
 module.exports = router;

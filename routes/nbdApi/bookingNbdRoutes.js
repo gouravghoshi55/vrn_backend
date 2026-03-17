@@ -2,9 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-
-const SHEET_NAME = "END USER LEADS FMS"; 
-
+const SHEET_NAME = "END USER LEADS FMS";
 
 function getCurrentTimestamp() {
   const now = new Date();
@@ -21,43 +19,57 @@ function parseDate(dateStr) {
   if (!dateStr) return new Date(0);
   const parts = dateStr.split(/[\/\-]/);
   if (parts.length === 3) {
-    if (parts[0].length === 4) {
-      return new Date(parts[0], parts[1] - 1, parts[2]);
-    }
+    if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
     return new Date(parts[2], parts[1] - 1, parts[0]);
   }
   return new Date(dateStr);
 }
 
+// ✅ Helper: Get doerTag from user info
+function getDoerTag(user) {
+  if (!user) return null;
+  if (user.role === "admin" || user.assignedModule === "all") return null;
+  const emailToDoerMap = {
+    "bdm1@company.com": "BDM1",
+    "bdm2@company.com": "BDM2",
+  };
+  return emailToDoerMap[user.email?.toLowerCase()] || null;
+}
+
 // ============================================
-// FETCH LIST - Only Planned (AM) is NOT NULL
+// FETCH LIST
 // ============================================
 
-async function getFilteredBookingLeads(sheets) {
+async function getFilteredBookingLeads(sheets, user) {
+  // ✅ Extended range from A8:AQ to A8:AS to include Doer column
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${SHEET_NAME}'!A8:AQ`,  // Up to AQ (Unit No)
+    range: `'${SHEET_NAME}'!A8:AS`,
   });
 
   const rows = response.data.values || [];
   const filtered = [];
 
-  rows.forEach((row, index) => {
-    // 0-based indices
-    const plannedDate  = row[38] ? row[38].trim() : "";   // AM → Planned (col 39)
-    const actualDate   = row[39] ? row[39].trim() : "";   // AN → Actual (col 40)
-    const status       = row[40] ? row[40].trim() : "";   // AO → Status (col 41)
-    const block        = row[41] ? row[41].trim() : "";   // AP → Block (col 42)
-    const unitNo       = row[42] ? row[42].trim() : "";   // AQ → Unit No (col 43)
+  // ✅ Get doer tag for current user
+  const doerTag = getDoerTag(user);
 
-    // Show row only if Planned date exists (AM not empty)
-    // You can add more strict condition if needed: && !actualDate
+  rows.forEach((row, index) => {
+    const plannedDate = row[38] ? row[38].trim() : "";   // AM
+    const actualDate  = row[39] ? row[39].trim() : "";   // AN
+    const status      = row[40] ? row[40].trim() : "";   // AO
+    const block       = row[41] ? row[41].trim() : "";   // AP
+    const unitNo      = row[42] ? row[42].trim() : "";   // AQ
+    const doer        = row[45] ? row[45].trim() : "";   // ✅ AS = index 44
+
     const showRow = plannedDate !== "";
 
     if (showRow) {
+      // ✅ DOER FILTER
+      if (doerTag && doer !== doerTag) return;
+
       filtered.push({
         rowIndex: index + 8,
-        sheetName: SHEET_NAME,           // fixed
+        sheetName: SHEET_NAME,
         uniqueId: row[1] || "",
         customerName: row[2] || "",
         customerContact: row[3] || "",
@@ -70,6 +82,7 @@ async function getFilteredBookingLeads(sheets) {
         status: status || "Pending",
         block,
         unitNo,
+        doer, // ✅ Include doer
       });
     }
   });
@@ -83,16 +96,10 @@ async function getFilteredBookingLeads(sheets) {
 
 router.get("/list", async (req, res) => {
   try {
-    const leads = await getFilteredBookingLeads(req.sheets);
-
-    // Sort by planned date
+    // ✅ Pass user info
+    const leads = await getFilteredBookingLeads(req.sheets, req.user);
     leads.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
-
-    res.json({
-      success: true,
-      data: leads,
-      total: leads.length,
-    });
+    res.json({ success: true, data: leads, total: leads.length });
   } catch (err) {
     console.error("Error fetching booking leads:", err);
     res.status(500).json({ success: false, error: err.message });
@@ -106,67 +113,38 @@ router.get("/list", async (req, res) => {
 router.post("/update", async (req, res) => {
   try {
     const { rowIndex, status, block, unitNo } = req.body;
-
-    // sheetName ab fixed hai — frontend se nahi bhejna padega
     const sheetName = SHEET_NAME;
 
-    console.log("Booking Update Payload:", { sheetName, rowIndex, status, block, unitNo });
-
-    if (!rowIndex) {
-      return res.status(400).json({ success: false, error: "Missing rowIndex" });
-    }
-
-    if (!status) {
-      return res.status(400).json({ success: false, error: "Status is required" });
-    }
+    if (!rowIndex) return res.status(400).json({ success: false, error: "Missing rowIndex" });
+    if (!status) return res.status(400).json({ success: false, error: "Status is required" });
 
     const timestamp = getCurrentTimestamp();
     const updates = [];
 
-    // Status (AO) – always update
-    updates.push({
-      range: `'${sheetName}'!AO${rowIndex}`,
-      values: [[String(status).trim()]],
-    });
+    updates.push({ range: `'${sheetName}'!AO${rowIndex}`, values: [[String(status).trim()]] });
 
-    // Block (AP) – optional
     if (block && String(block).trim() !== "") {
-      updates.push({
-        range: `'${sheetName}'!AP${rowIndex}`,
-        values: [[String(block).trim()]],
-      });
+      updates.push({ range: `'${sheetName}'!AP${rowIndex}`, values: [[String(block).trim()]] });
     }
 
-    // Unit No (AQ) – optional
     if (unitNo && String(unitNo).trim() !== "") {
-      updates.push({
-        range: `'${sheetName}'!AQ${rowIndex}`,
-        values: [[String(unitNo).trim()]],
-      });
+      updates.push({ range: `'${sheetName}'!AQ${rowIndex}`, values: [[String(unitNo).trim()]] });
     }
 
-    // Actual timestamp (AN) – mark as done
-    updates.push({
-      range: `'${sheetName}'!AN${rowIndex}`,
-      values: [[timestamp]],
-    });
+    updates.push({ range: `'${sheetName}'!AN${rowIndex}`, values: [[timestamp]] });
 
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
-      requestBody: {
-        valueInputOption: "USER_ENTERED",
-        data: updates,
-      },
+      requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
 
-    res.json({
-      success: true,
-      message: "Booking Done Successfully!",
-    });
+    res.json({ success: true, message: "Booking Done Successfully!" });
   } catch (err) {
     console.error("Booking update failed:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// NOTE: Assign endpoint is centralized in nbdinRoutes.js (/leads/nbdin/assign)
 
 module.exports = router;

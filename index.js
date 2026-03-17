@@ -51,6 +51,10 @@ app.use((req, res, next) => {
 // Import Routes
 // ============================================
 
+// ✅ Import protect middleware
+// If your file path is different, update accordingly
+const { protect } = require("./middleware/authMiddleware");
+
 // Auth Routes
 const authRoutes = require("./routes/authRoutes");
 
@@ -80,12 +84,12 @@ const leadSearchRoutes = require("./routes/leadSearch");
 // Auth
 app.use("/api/auth", authRoutes);
 
-// NBD APIs (BDM1 + Admin)
-app.use("/api/leads", nbdinRoutes);
-app.use("/api/field-visit", nbdFieldVisitRoutes);
-app.use("/api/after-field-visit", nbdAfterFieldVisitRoutes);
-app.use("/api/meeting-nbd", nbdMeetingRoutes);
-app.use("/api/booking-nbd", nbdBookingRoutes);
+// ✅ NBD APIs — NOW WITH protect MIDDLEWARE for doer-based filtering
+app.use("/api/leads", protect, nbdinRoutes);
+app.use("/api/field-visit", protect, nbdFieldVisitRoutes);
+app.use("/api/after-field-visit", protect, nbdAfterFieldVisitRoutes);
+app.use("/api/meeting-nbd", protect, nbdMeetingRoutes);
+app.use("/api/booking-nbd", protect, nbdBookingRoutes);
 
 // CP APIs (BDM2 + Admin)
 app.use("/api/cp/followup", cpFollowupRoutes);
@@ -97,7 +101,7 @@ app.use("/api/cp/lead-form", cpLeadFormRoutes);
 app.use('/cp', cpContactUpdateRoutes);
 
 // Add this with other route registrations
-app.use("/api/leads", leadSearchRoutes);
+app.use("/api/leads", protect, leadSearchRoutes);
 
 
 // ============================================

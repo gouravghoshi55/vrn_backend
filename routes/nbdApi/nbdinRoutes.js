@@ -4,6 +4,10 @@ const router = express.Router();
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const NBD_SHEET_NAME = "END USER LEADS FMS"; // ✅ Only END USER sheet
 
+// ✅ Lead Qualification Sheet (Source of truth for Doer)
+const LEAD_QUAL_SPREADSHEET_ID = "17NsMDuq_woISO9CJTBh2e5BaZaKcSXkBEoEF6CNlDd0";
+const LEAD_QUAL_SHEET_NAME = "FMS";
+
 // --- HELPER FUNCTIONS ---
 
 function parseDate(dateStr) {
@@ -45,17 +49,40 @@ function getPlannedDateTime(dateStr) {
   return `${formattedDate} ${currentTime}`;
 }
 
+// ✅ Helper: Get doerTag from user info
+// Maps logged-in user email to Doer column value
+function getDoerTag(user) {
+  if (!user) return null;
+
+  // Admin sees all leads
+  if (user.role === "admin" || user.assignedModule === "all") {
+    return null; // null means no filter, show all
+  }
+
+  // Map email to doer tag
+  const emailToDoerMap = {
+    "bdm1@company.com": "BDM1",
+    "bdm2@company.com": "BDM2",
+  };
+
+  return emailToDoerMap[user.email?.toLowerCase()] || null;
+}
+
 // --- READ DATA (GET) ---
 
-async function getFilteredLeads(sheets) {
+async function getFilteredLeads(sheets, user) {
   try {
+    // ✅ Extended range to A8:AT to include Doer column
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${NBD_SHEET_NAME}'!A8:T`,
+      range: `'${NBD_SHEET_NAME}'!A8:AT`,
     });
 
     const rows = response.data.values || [];
     const filteredLeads = [];
+
+    // ✅ Get doer tag for current user
+    const doerTag = getDoerTag(user);
 
     rows.forEach((row, index) => {
       // --- COLUMN MAPPING ---
@@ -69,6 +96,7 @@ async function getFilteredLeads(sheets) {
       // R [17] = FollowUp Count
       // S [18] = Pick and Drop
       // T [19] = Latest Remarks
+      // AT [45] = Doer
 
       const importantNote = row[10] ? row[10].trim() : "";
       const status = row[14] ? row[14].trim() : "";
@@ -78,6 +106,7 @@ async function getFilteredLeads(sheets) {
       const pickAndDrop = row[18] ? row[18].trim() : "No";
       const oldRemarkL = row[11] ? row[11].trim() : "";
       const latestRemarkT = row[19] ? row[19].trim() : "";
+      const doer = row[45] ? row[45].trim() : ""; // ✅ Doer column (AT = index 45)
 
       // --- REMARKS LOGIC ---
       const countVal = parseInt(followUpCountStr) || 0;
@@ -91,6 +120,11 @@ async function getFilteredLeads(sheets) {
 
       // --- STATUS FILTER ---
       if (status === "" || status === "No conversation" || status === "Next Follow Up") {
+        // ✅ DOER FILTER: If doerTag exists, only show leads assigned to this user
+        if (doerTag && doer !== doerTag) {
+          return; // Skip this lead — not assigned to current user
+        }
+
         filteredLeads.push({
           rowIndex: index + 8,
           sheetName: NBD_SHEET_NAME,
@@ -110,6 +144,7 @@ async function getFilteredLeads(sheets) {
           followUpCount: countVal,
           remarks: finalRemarkToDisplay,
           oldRemarks: oldRemarkL,
+          doer: doer, // ✅ Include doer in response
         });
       }
     });
@@ -126,8 +161,12 @@ async function getFilteredLeads(sheets) {
 router.get("/nbdin", async (req, res) => {
   try {
     console.log("📊 Fetching NBD Follow-up data (END USER only)...");
+    console.log("🔍 req.user:", req.user ? JSON.stringify(req.user) : "❌ UNDEFINED");
+    console.log("🔍 doerTag:", getDoerTag(req.user));
+    console.log("🔍 Authorization header:", req.headers.authorization ? "✅ Present" : "❌ Missing");
 
-    const leads = await getFilteredLeads(req.sheets);
+    // ✅ Pass user info for doer-based filtering
+    const leads = await getFilteredLeads(req.sheets, req.user);
 
     // Sort by planned date
     leads.sort((a, b) => {
@@ -262,6 +301,88 @@ router.post("/nbdin/update", async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Error updating NBD lead:", error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ============================================
+// ✅ NEW: ASSIGN LEAD TO BDM (POST)
+// Updates Doer column (V) in Lead Qualification Sheet
+// ============================================
+
+router.post("/nbdin/assign", async (req, res) => {
+  try {
+    const { uniqueId, assignTo } = req.body;
+
+    console.log("🔄 Assigning lead:", { uniqueId, assignTo });
+
+    if (!uniqueId || !assignTo) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required fields: uniqueId and assignTo",
+      });
+    }
+
+    // Validate assignTo value
+    const validAssignees = ["BDM1", "BDM2"];
+    if (!validAssignees.includes(assignTo)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid assignTo value. Must be BDM1 or BDM2",
+      });
+    }
+
+    // Step 1: Find the row in Lead Qualification Sheet by Unique ID
+    const response = await req.sheets.spreadsheets.values.get({
+      spreadsheetId: LEAD_QUAL_SPREADSHEET_ID,
+      range: `'${LEAD_QUAL_SHEET_NAME}'!A:V`, // A to V (Doer column)
+    });
+
+    const rows = response.data.values || [];
+    let targetRowIndex = -1;
+
+    // Find the row with matching Unique ID (Column B = index 1)
+    for (let i = 0; i < rows.length; i++) {
+      const rowUniqueId = rows[i][1] ? rows[i][1].trim() : "";
+      if (rowUniqueId === uniqueId) {
+        targetRowIndex = i + 1; // Sheets are 1-indexed
+        break;
+      }
+    }
+
+    if (targetRowIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: `Lead with Unique ID "${uniqueId}" not found in Lead Qualification Sheet`,
+      });
+    }
+
+    // Step 2: Update Doer column (V) in Lead Qualification Sheet
+    await req.sheets.spreadsheets.values.update({
+      spreadsheetId: LEAD_QUAL_SPREADSHEET_ID,
+      range: `'${LEAD_QUAL_SHEET_NAME}'!V${targetRowIndex}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[assignTo]],
+      },
+    });
+
+    console.log(`✅ Lead ${uniqueId} assigned to ${assignTo} at row ${targetRowIndex}`);
+
+    res.json({
+      success: true,
+      message: `Lead ${uniqueId} assigned to ${assignTo} successfully`,
+      data: {
+        uniqueId,
+        assignTo,
+        rowIndex: targetRowIndex,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error assigning lead:", error.message);
     res.status(500).json({
       success: false,
       error: error.message,

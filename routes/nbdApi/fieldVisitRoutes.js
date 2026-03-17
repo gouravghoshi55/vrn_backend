@@ -50,19 +50,36 @@ function parseDate(dateStr) {
   return new Date(dateStr);
 }
 
+// ✅ Helper: Get doerTag from user info
+function getDoerTag(user) {
+  if (!user) return null;
+  if (user.role === "admin" || user.assignedModule === "all") {
+    return null; // Admin sees all
+  }
+  const emailToDoerMap = {
+    "bdm1@company.com": "BDM1",
+    "bdm2@company.com": "BDM2",
+  };
+  return emailToDoerMap[user.email?.toLowerCase()] || null;
+}
+
 // ======================================================
 // READ DATA - NBD Field Visit
 // ======================================================
 
-async function getFilteredLeads(sheets) {
+async function getFilteredLeads(sheets, user) {
   try {
+    // ✅ Extended range from A8:AA to A8:AS to include Doer column
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${NBD_SHEET_NAME}'!A8:AA`,
+      range: `'${NBD_SHEET_NAME}'!A8:AT`,
     });
 
     const rows = response.data.values || [];
     const filteredLeads = [];
+
+    // ✅ Get doer tag for current user
+    const doerTag = getDoerTag(user);
 
     rows.forEach((row, index) => {
       const importantNote = row[10] ? row[10].trim() : "";     // K
@@ -76,6 +93,7 @@ async function getFilteredLeads(sheets) {
       const previousRemarks = row[19] ? row[19].trim() : "";   // T
       const latestRemarks = row[24] ? row[24].trim() : "";     // Y
       const followupCount = row[25] ? parseInt(row[25].trim(), 10) || 0 : 0; // Z
+      const doer = row[45] ? row[45].trim() : ""; // ✅ AS = index 44 (Doer column)
 
       // Display logic: Y > T > L
       let displayRemarks = "";
@@ -91,6 +109,11 @@ async function getFilteredLeads(sheets) {
       const showRow = !status || status.trim().toLowerCase() === "rescheduled";
 
       if (showRow && plannedDate) {
+        // ✅ DOER FILTER: If doerTag exists, only show leads assigned to this user
+        if (doerTag && doer !== doerTag) {
+          return; // Skip — not assigned to current user
+        }
+
         filteredLeads.push({
           rowIndex: index + 8,
           sheetName: NBD_SHEET_NAME,
@@ -110,6 +133,7 @@ async function getFilteredLeads(sheets) {
           oldRemarks: oldRemarks,
           previousRemarks: previousRemarks,
           previousRemarksDate: previousRemarksDate,
+          doer: doer, // ✅ Include doer in response
         });
       }
     });
@@ -129,7 +153,8 @@ router.get("/list", async (req, res) => {
   try {
     console.log("📊 Fetching NBD Field Visit data (END USER only)...");
 
-    const leads = await getFilteredLeads(req.sheets);
+    // ✅ Pass user info for doer-based filtering
+    const leads = await getFilteredLeads(req.sheets, req.user);
 
     leads.sort((a, b) => {
       const dateA = parseDate(a.plannedDate);
@@ -267,5 +292,8 @@ router.post("/update", async (req, res) => {
     });
   }
 });
+
+// NOTE: Assign endpoint is centralized in nbdinRoutes.js (/leads/nbdin/assign)
+// All steps use the same endpoint since assign logic is identical (updates Lead Qualification Sheet Column V)
 
 module.exports = router;

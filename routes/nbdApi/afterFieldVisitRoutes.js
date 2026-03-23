@@ -53,7 +53,7 @@ async function getFilteredLeads(sheets, user) {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${NBD_SHEET_NAME}'!A8:AU`,
+      range: `'${NBD_SHEET_NAME}'!A8:AN`,
     });
 
     const rows = response.data.values || [];
@@ -68,7 +68,7 @@ async function getFilteredLeads(sheets, user) {
         const plannedDate = getCol(26); // AA
         const actualDate = getCol(27);  // AB
         const status = getCol(28);      // AC
-        const doer = getCol(45);        // ✅ AS = index 44 (Doer column)
+        const doer = getCol(38);        // ✅ AS = index 44 (Doer column)
 
         if ((plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up" || status === "Next Field Visit Required") {
           // ✅ DOER FILTER
@@ -100,14 +100,14 @@ async function getFilteredLeads(sheets, user) {
             plannedDate,
             status: status || "Pending",
             followUpCount: getCol(31) || "0",
-            fieldVisitCount: getCol(46) || "0",
+            fieldVisitCount: getCol(39) || "0",
             remarks: displayRemarks,
             oldRemarks: oldRemarks,
             previousRemarks: previousRemarks,
             previousRemarksDate: previousRemarksDate,
             latestOldRemarks: latestOldRemarks,
             latestOldRemarksDate: latestOldRemarksDate,
-            doer: doer, // ✅ Include doer in response
+            doer: doer, 
           };
         }
         return null;
@@ -202,7 +202,7 @@ router.post("/update", async (req, res) => {
       try {
         const fieldVisitRes = await req.sheets.spreadsheets.values.get({
           spreadsheetId: SPREADSHEET_ID,
-          range: `'${NBD_SHEET_NAME}'!AU${rowIndex}`,
+          range: `'${NBD_SHEET_NAME}'!AN${rowIndex}`,
         });
         const val = fieldVisitRes.data.values?.[0]?.[0];
         currentFieldVisitCount = parseInt(val) || 0;
@@ -213,7 +213,7 @@ router.post("/update", async (req, res) => {
       const newFieldVisitCount = currentFieldVisitCount + 1;
 
       updates.push({
-        range: `'${NBD_SHEET_NAME}'!AU${rowIndex}`,
+        range: `'${NBD_SHEET_NAME}'!AN${rowIndex}`,
         values: [[newFieldVisitCount]],
       });
 

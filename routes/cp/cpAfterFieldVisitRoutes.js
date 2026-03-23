@@ -40,7 +40,7 @@ async function getFilteredCPLeads(sheets, category) {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${CP_SHEET_NAME}'!A8:AT`, // Extended to AT
+      range: `'${CP_SHEET_NAME}'!A8:AM`, // Extended to AT
     });
 
     const rows = response.data.values || [];
@@ -52,7 +52,7 @@ async function getFilteredCPLeads(sheets, category) {
         const plannedDate = getCol(26); // AA
         const actualDate = getCol(27);  // AB
         const status = getCol(28);      // AC
-        const canContact = getCol(45);  // AT
+        const canContact = getCol(38);  
 
         // Category filter
         const categoryMatch =

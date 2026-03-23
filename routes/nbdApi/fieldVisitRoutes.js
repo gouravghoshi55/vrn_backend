@@ -72,7 +72,7 @@ async function getFilteredLeads(sheets, user) {
     // ✅ Extended range from A8:AA to A8:AS to include Doer column
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${NBD_SHEET_NAME}'!A8:AT`,
+      range: `'${NBD_SHEET_NAME}'!A8:AN`,
     });
 
     const rows = response.data.values || [];
@@ -93,7 +93,7 @@ async function getFilteredLeads(sheets, user) {
       const previousRemarks = row[19] ? row[19].trim() : "";   // T
       const latestRemarks = row[24] ? row[24].trim() : "";     // Y
       const followupCount = row[25] ? parseInt(row[25].trim(), 10) || 0 : 0; // Z
-      const doer = row[45] ? row[45].trim() : ""; // ✅ AS = index 44 (Doer column)
+      const doer = row[38] ? row[38].trim() : ""; // 
 
       // Display logic: Y > T > L
       let displayRemarks = "";

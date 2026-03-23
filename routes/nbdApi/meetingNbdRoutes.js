@@ -59,7 +59,7 @@ function getDoerTag(user) {
 async function getFilteredLeads(sheets, user) {
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${SHEET_NAME}'!A8:AU`,
+    range: `'${SHEET_NAME}'!A8:AN`,
   });
 
   const rows = response.data.values || [];
@@ -72,7 +72,7 @@ async function getFilteredLeads(sheets, user) {
     const plannedDate = row[33] ? row[33].trim() : "";
     const actualDate = row[34] ? row[34].trim() : "";
     let status = row[35] ? row[35].trim() : "";
-    const doer = row[45] ? row[45].trim() : ""; // AT
+    const doer = row[38] ? row[38].trim() : ""; // AT
 
     const oldRemarks = row[11] ? row[11].trim() : "";
     const previousRemarksDate = row[13] ? row[13].trim() : "";
@@ -106,7 +106,7 @@ async function getFilteredLeads(sheets, user) {
         leadGenName: row[8] || "",
         plannedDate,
         status,
-        fieldVisitCount: row[46] || "0",
+        fieldVisitCount: row[39] || "0",
         remarks: displayRemarks,
         oldRemarks,
         previousRemarks,
@@ -160,12 +160,12 @@ router.post("/update", async (req, res) => {
     if (status === "Next Field Visit Required") {
       let currentFieldVisitCount = 0;
       try {
-        const fieldVisitRes = await req.sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${sheetName}'!AU${rowIndex}` });
+        const fieldVisitRes = await req.sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${sheetName}'!AN${rowIndex}` });
         const val = fieldVisitRes.data.values?.[0]?.[0];
         currentFieldVisitCount = val ? parseInt(String(val).trim(), 10) || 0 : 0;
       } catch (e) { console.warn("Could not read field visit count:", e.message); }
       const newFieldVisitCount = currentFieldVisitCount + 1;
-      updates.push({ range: `'${sheetName}'!AU${rowIndex}`, values: [[newFieldVisitCount]] });
+      updates.push({ range: `'${sheetName}'!AN${rowIndex}`, values: [[newFieldVisitCount]] });
     }
 
     if (rescheduleDate && String(rescheduleDate).trim() !== "") {

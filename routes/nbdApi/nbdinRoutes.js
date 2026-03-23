@@ -75,7 +75,7 @@ async function getFilteredLeads(sheets, user) {
     // ✅ Extended range to A8:AT to include Doer column
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${NBD_SHEET_NAME}'!A8:AT`,
+      range: `'${NBD_SHEET_NAME}'!A8:AN`,
     });
 
     const rows = response.data.values || [];
@@ -106,7 +106,7 @@ async function getFilteredLeads(sheets, user) {
       const pickAndDrop = row[18] ? row[18].trim() : "No";
       const oldRemarkL = row[11] ? row[11].trim() : "";
       const latestRemarkT = row[19] ? row[19].trim() : "";
-      const doer = row[45] ? row[45].trim() : ""; // ✅ Doer column (AT = index 45)
+      const doer = row[38] ? row[38].trim() : ""; // ✅ Doer column (AT = index 45)
 
       // --- REMARKS LOGIC ---
       const countVal = parseInt(followUpCountStr) || 0;

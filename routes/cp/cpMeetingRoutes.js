@@ -56,7 +56,7 @@ function parseDate(dateStr) {
 async function getFilteredCPLeads(sheets, category) {
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${CP_SHEET_NAME}'!A8:AT`, // Extended to AT for Can Contact column
+    range: `'${CP_SHEET_NAME}'!A8:AM`, // Extended to AT for Can Contact column
   });
 
   const rows = response.data.values || [];
@@ -66,7 +66,7 @@ async function getFilteredCPLeads(sheets, category) {
     const plannedDate = row[33] ? row[33].trim() : "";         // AH
     const actualDate = row[34] ? row[34].trim() : "";          // AI
     let status = row[35] ? row[35].trim() : "";                // AJ
-    const canContact = row[45] ? row[45].trim() : "";          // AT
+    const canContact = row[38] ? row[38].trim() : "";          
 
     // ===== CATEGORY FILTER =====
    const categoryMatch =

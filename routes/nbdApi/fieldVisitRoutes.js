@@ -51,15 +51,25 @@ function parseDate(dateStr) {
 }
 
 // ✅ Helper: Get doerTag from user info
+// Sirf ye function replace karo
 function getDoerTag(user) {
   if (!user) return null;
-  if (user.role === "admin" || user.assignedModule === "all") {
-    return null; // Admin sees all
+
+  // Admin aur FSR users — sab leads dikhte hain
+  if (
+    user.role === "admin" ||
+    user.assignedModule === "all" ||
+    user.assignedModule === "fsr"  // ✅ BDM4/BDM5 ko sab dikhega
+  ) {
+    return null;
   }
+
   const emailToDoerMap = {
     "bdm1@company.com": "BDM1",
     "bdm2@company.com": "BDM2",
+    "bdm3@company.com": "BDM3",
   };
+
   return emailToDoerMap[user.email?.toLowerCase()] || null;
 }
 

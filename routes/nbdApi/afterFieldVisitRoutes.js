@@ -3,10 +3,7 @@ const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const NBD_SHEET_NAME = "END USER LEADS FMS";
-
-// ======================================================
-// HELPERS
-// ======================================================
+const LOGGER_SHEET_NAME = "Logger";
 
 function getCurrentTimestamp() {
   const now = new Date();
@@ -32,30 +29,63 @@ function formatDateToSheetStyle(dateInput) {
   return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 
-// ✅ Helper: Get doerTag from user info
 function getDoerTag(user) {
   if (!user) return null;
-
-  // Admin aur FSR users — sab leads dikhte hain
-  if (
-    user.role === "admin" ||
-    user.assignedModule === "all" ||
-    user.assignedModule === "fsr"  // ✅ BDM4/BDM5 ko sab dikhega
-  ) {
-    return null;
-  }
-
+  if (user.role === "admin" || user.assignedModule === "all") return null;
+  if (user.assignedModule === "fsr") return null;
   const emailToDoerMap = {
     "bdm1@company.com": "BDM1",
     "bdm2@company.com": "BDM2",
     "bdm3@company.com": "BDM3",
   };
-
   return emailToDoerMap[user.email?.toLowerCase()] || null;
 }
 
+function getFSRDoerTag(user) {
+  if (!user) return null;
+  if (user.assignedModule !== "fsr") return null;
+  const fsrMap = {
+    "bdm4@company.com": "BDM4",
+    "bdm5@company.com": "BDM5",
+  };
+  return fsrMap[user.email?.toLowerCase()] || null;
+}
+
 // ======================================================
-// READ DATA - NBD After Field Visit
+// Logger Sheet mein append karo
+// ======================================================
+
+async function appendToLogger(sheets, lead, status, remarks, timestamp, stepName, userEmail) {
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${LOGGER_SHEET_NAME}'!A:J`,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: [[
+          timestamp,           // A - Timestamp
+          stepName,            // B - Step
+          lead.uniqueId || "", // C - Unique ID
+          lead.customerName || "", // D - Customer Name
+          lead.customerContact || "", // E - Contact
+          lead.interestedIn || "", // F - Interested In
+          lead.projectSelection || "", // G - Project
+          status,              // H - Status
+          remarks || "",       // I - Remarks
+          userEmail || "",     // J - Updated By
+        ]],
+      },
+    });
+    console.log(`✅ Logger entry added for ${lead.uniqueId}`);
+  } catch (error) {
+    console.error("❌ Logger append failed:", error.message);
+    // Logger fail hone par main update fail mat karo
+  }
+}
+
+// ======================================================
+// READ DATA
 // ======================================================
 
 async function getFilteredLeads(sheets, user) {
@@ -66,9 +96,8 @@ async function getFilteredLeads(sheets, user) {
     });
 
     const rows = response.data.values || [];
-
-    // ✅ Get doer tag for current user
     const doerTag = getDoerTag(user);
+    const fsrDoerTag = getFSRDoerTag(user);
 
     return rows
       .map((row, index) => {
@@ -77,49 +106,55 @@ async function getFilteredLeads(sheets, user) {
         const plannedDate = getCol(26); // AA
         const actualDate = getCol(27);  // AB
         const status = getCol(28);      // AC
-        const doer = getCol(38);        // ✅ AS = index 44 (Doer column)
+        const doer = getCol(38);        // AM = index 38
+        const fsrDoer = getCol(39);     // AN = index 39 ✅
 
-        if ((plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up" || status === "Next Field Visit Required") {
-          // ✅ DOER FILTER
-          if (doerTag && doer !== doerTag) {
-            return null; // Skip — not assigned to current user
-          }
+        const showRow =
+          (plannedDate && !actualDate) ||
+          status === "No conversation" ||
+          status === "Next Follow Up" ||
+          status === "Next Field Visit Required";
 
-          const oldRemarks = getCol(11);
-          const previousRemarksDate = getCol(13);
-          const previousRemarks = getCol(19);
-          const latestOldRemarks = getCol(24);
-          const latestOldRemarksDate = getCol(21);
-          const currentRemarks = getCol(32);
+        if (!showRow) return null;
 
-          let displayRemarks = currentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
+        // BDM1/BDM2/BDM3 filter — AM column
+        if (doerTag && doer !== doerTag) return null;
 
-          return {
-            rowIndex: index + 8,
-            sheetName: NBD_SHEET_NAME,
-            uniqueId: getCol(1),
-            customerName: getCol(2),
-            customerContact: getCol(3),
-            interestedIn: getCol(4),
-            projectSelection: getCol(5),
-            leadSource: getCol(6),
-            leadGenNumber: getCol(7),
-            leadGenName: getCol(8),
-            importantNote: getCol(10),
-            plannedDate,
-            status: status || "Pending",
-            followUpCount: getCol(31) || "0",
-            fieldVisitCount: getCol(39) || "0",
-            remarks: displayRemarks,
-            oldRemarks: oldRemarks,
-            previousRemarks: previousRemarks,
-            previousRemarksDate: previousRemarksDate,
-            latestOldRemarks: latestOldRemarks,
-            latestOldRemarksDate: latestOldRemarksDate,
-            doer: doer, 
-          };
-        }
-        return null;
+        // FSR filter — AN column
+        if (fsrDoerTag && fsrDoer !== fsrDoerTag) return null;
+
+        const oldRemarks = getCol(11);
+        const previousRemarksDate = getCol(13);
+        const previousRemarks = getCol(19);
+        const latestOldRemarks = getCol(24);
+        const latestOldRemarksDate = getCol(21);
+        const currentRemarks = getCol(32);
+        const displayRemarks = currentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
+
+        return {
+          rowIndex: index + 8,
+          sheetName: NBD_SHEET_NAME,
+          uniqueId: getCol(1),
+          customerName: getCol(2),
+          customerContact: getCol(3),
+          interestedIn: getCol(4),
+          projectSelection: getCol(5),
+          leadSource: getCol(6),
+          leadGenNumber: getCol(7),
+          leadGenName: getCol(8),
+          importantNote: getCol(10),
+          plannedDate,
+          status: status || "Pending",
+          followUpCount: getCol(31) || "0",
+          fsrDoer, // ✅ AN column
+          remarks: displayRemarks,
+          oldRemarks,
+          previousRemarks,
+          previousRemarksDate,
+          latestOldRemarks,
+          latestOldRemarksDate,
+          doer,
+        };
       })
       .filter(Boolean);
   } catch (error) {
@@ -129,16 +164,13 @@ async function getFilteredLeads(sheets, user) {
 }
 
 // ======================================================
-// GET /list - NBD After Field Visit
+// GET /list
 // ======================================================
 
 router.get("/list", async (req, res) => {
   try {
-    console.log("📊 Fetching NBD After Field Visit data (END USER only)...");
-
-    // ✅ Pass user info for doer-based filtering
+    console.log("📊 Fetching NBD After Field Visit data...");
     const leads = await getFilteredLeads(req.sheets, req.user);
-
     leads.sort((a, b) => {
       const parse = (d) => {
         if (!d) return 0;
@@ -147,42 +179,23 @@ router.get("/list", async (req, res) => {
       };
       return parse(a.plannedDate) - parse(b.plannedDate);
     });
-
-    res.json({
-      success: true,
-      data: leads,
-      total: leads.length,
-    });
+    res.json({ success: true, data: leads, total: leads.length });
   } catch (error) {
     console.error("❌ Error fetching NBD After Field Visit:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
 // ======================================================
-// POST /update - NBD After Field Visit
+// POST /update
 // ======================================================
 
 router.post("/update", async (req, res) => {
   try {
-    const { rowIndex, status, remarks, rescheduleDate, dealMeetingDate } = req.body;
-
-    console.log("📝 NBD After Field Visit Update:", {
-      rowIndex,
-      status,
-      remarks,
-      rescheduleDate,
-      dealMeetingDate,
-    });
+    const { rowIndex, status, remarks, rescheduleDate, dealMeetingDate, leadInfo } = req.body;
 
     if (!rowIndex) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing rowIndex",
-      });
+      return res.status(400).json({ success: false, error: "Missing rowIndex" });
     }
 
     let currentCount = 0;
@@ -191,49 +204,20 @@ router.post("/update", async (req, res) => {
         spreadsheetId: SPREADSHEET_ID,
         range: `'${NBD_SHEET_NAME}'!AF${rowIndex}`,
       });
-      const val = countRes.data.values?.[0]?.[0];
-      currentCount = parseInt(val) || 0;
-    } catch (e) {
-      console.warn("Could not read AF count:", e.message);
-    }
+      currentCount = parseInt(countRes.data.values?.[0]?.[0]) || 0;
+    } catch (e) {}
 
     const newCount = currentCount + 1;
     const updates = [];
     const timestamp = getCurrentTimestamp();
 
-    updates.push({
-      range: `'${NBD_SHEET_NAME}'!AF${rowIndex}`,
-      values: [[newCount]],
-    });
+    updates.push({ range: `'${NBD_SHEET_NAME}'!AF${rowIndex}`, values: [[newCount]] });
 
-    if (status === "Next Field Visit Required") {
-      let currentFieldVisitCount = 0;
-      try {
-        const fieldVisitRes = await req.sheets.spreadsheets.values.get({
-          spreadsheetId: SPREADSHEET_ID,
-          range: `'${NBD_SHEET_NAME}'!AN${rowIndex}`,
-        });
-        const val = fieldVisitRes.data.values?.[0]?.[0];
-        currentFieldVisitCount = parseInt(val) || 0;
-      } catch (e) {
-        console.warn("Could not read AU field visit count:", e.message);
-      }
-
-      const newFieldVisitCount = currentFieldVisitCount + 1;
-
-      updates.push({
-        range: `'${NBD_SHEET_NAME}'!AN${rowIndex}`,
-        values: [[newFieldVisitCount]],
-      });
-
-      console.log(`✅ Field Visit Count incremented: ${currentFieldVisitCount} → ${newFieldVisitCount}`);
-    }
+    // ✅ AN column — FSR assignment hai, field visit count nahi
+    // Next Field Visit Required pe AN column touch nahi karenge
 
     if (remarks && String(remarks).trim()) {
-      updates.push({
-        range: `'${NBD_SHEET_NAME}'!AG${rowIndex}`,
-        values: [[String(remarks).trim()]],
-      });
+      updates.push({ range: `'${NBD_SHEET_NAME}'!AG${rowIndex}`, values: [[String(remarks).trim()]] });
     }
 
     if (
@@ -242,70 +226,42 @@ router.post("/update", async (req, res) => {
       ["No conversation", "Next Follow Up", "Next Field Visit Required"].includes(status || "")
     ) {
       const formatted = formatDateToSheetStyle(rescheduleDate);
-      console.log("→ Processing RESCHEDULE to:", formatted);
-
-      updates.push({
-        range: `'${NBD_SHEET_NAME}'!AA${rowIndex}`,
-        values: [[formatted]],
-      });
-
-      updates.push({
-        range: `'${NBD_SHEET_NAME}'!AE${rowIndex}`,
-        values: [[formatted]],
-      });
-
-      updates.push({
-        range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`,
-        values: [[status]],
-      });
+      updates.push({ range: `'${NBD_SHEET_NAME}'!AA${rowIndex}`, values: [[formatted]] });
+      updates.push({ range: `'${NBD_SHEET_NAME}'!AE${rowIndex}`, values: [[formatted]] });
+      updates.push({ range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`, values: [[status]] });
     } else {
-      console.log("→ Processing DONE / STATUS UPDATE:", status);
-
-      updates.push({
-        range: `'${NBD_SHEET_NAME}'!AB${rowIndex}`,
-        values: [[timestamp]],
-      });
-
-      let finalStatus = status || "Done";
-      updates.push({
-        range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`,
-        values: [[finalStatus]],
-      });
+      updates.push({ range: `'${NBD_SHEET_NAME}'!AB${rowIndex}`, values: [[timestamp]] });
+      updates.push({ range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`, values: [[status || "Done"]] });
 
       if (dealMeetingDate) {
-        const formattedDeal = formatDateToSheetStyle(dealMeetingDate);
-        updates.push({
-          range: `'${NBD_SHEET_NAME}'!AD${rowIndex}`,
-          values: [[formattedDeal]],
-        });
+        updates.push({ range: `'${NBD_SHEET_NAME}'!AD${rowIndex}`, values: [[formatDateToSheetStyle(dealMeetingDate)]] });
       }
     }
 
-    if (updates.length > 0) {
-      await req.sheets.spreadsheets.values.batchUpdate({
-        spreadsheetId: SPREADSHEET_ID,
-        requestBody: {
-          valueInputOption: "USER_ENTERED",
-          data: updates,
-        },
-      });
-      console.log(`✅ NBD After Field Visit updated: Row ${rowIndex}`);
+    await req.sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: { valueInputOption: "USER_ENTERED", data: updates },
+    });
+
+    // ✅ Logger mein append karo — sirf Next Field Visit Required pe
+    if (status === "Next Field Visit Required" && leadInfo) {
+      await appendToLogger(
+        req.sheets,
+        leadInfo,
+        status,
+        remarks,
+        timestamp,
+        "After Field Visit Follow-Up",
+        req.user?.email
+      );
     }
 
-    res.json({
-      success: true,
-      message: "Updated successfully",
-      newFollowUpCount: newCount,
-    });
+    console.log(`✅ NBD After Field Visit updated: Row ${rowIndex}`);
+    res.json({ success: true, message: "Updated successfully", newFollowUpCount: newCount });
   } catch (error) {
     console.error("❌ NBD After Field Visit update failed:", error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
-
-// NOTE: Assign endpoint is centralized in nbdinRoutes.js (/leads/nbdin/assign)
 
 module.exports = router;

@@ -61,7 +61,7 @@ function getFSRCode(user) {
 function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
-  // FSR users — AM column se filter nahi, AN column se hoga
+  // FSR users — AM column se filter nahi
   if (user.assignedModule === "fsr") return null;
   const emailToDoerMap = {
     "bdm1@company.com": "BDM1",
@@ -69,17 +69,6 @@ function getDoerTag(user) {
     "bdm3@company.com": "BDM3",
   };
   return emailToDoerMap[user.email?.toLowerCase()] || null;
-}
-
-// ✅ Get FSR doer tag — AN column filter (BDM4/BDM5 only)
-function getFSRDoerTag(user) {
-  if (!user) return null;
-  if (user.assignedModule !== "fsr") return null;
-  const fsrMap = {
-    "bdm4@company.com": "BDM4",
-    "bdm5@company.com": "BDM5",
-  };
-  return fsrMap[user.email?.toLowerCase()] || null;
 }
 
 // ======================================================
@@ -97,7 +86,6 @@ async function getFilteredLeads(sheets, user) {
     const filteredLeads = [];
 
     const doerTag = getDoerTag(user);
-    const fsrDoerTag = getFSRDoerTag(user);
 
     rows.forEach((row, index) => {
       const importantNote = row[10] ? row[10].trim() : "";
@@ -120,10 +108,9 @@ async function getFilteredLeads(sheets, user) {
         // ✅ BDM1/BDM2/BDM3 filter — AM column
         if (doerTag && doer !== doerTag) return;
 
-        // ✅ FSR filter — AN column
-        // BDM4/BDM5 sirf wahi leads dekhen jahan AN mein unka code hai
-        // Agar AN blank hai — FSR ko nahi dikhegi (abhi assign nahi hui)
-        if (fsrDoerTag && fsrDoer !== fsrDoerTag) return;
+        // ✅ FSR users — Field Visit mein saari leads dikhao
+        // AN filter NAHI lagana — dono FSR ko saari pending leads dikhengi
+        // Jab koi FSR "Done" karega tab AN mein uska code likhega
 
         filteredLeads.push({
           rowIndex: index + 8,
@@ -154,46 +141,6 @@ async function getFilteredLeads(sheets, user) {
   } catch (error) {
     console.error(`Error fetching NBD Field Visit leads:`, error.message);
     throw error;
-  }
-}
-
-// ======================================================
-// AUTO ASSIGN FSR — Load Balancing
-// ======================================================
-
-async function autoAssignFSR(sheets, rowIndex) {
-  try {
-    // Count current BDM4 and BDM5 assignments in AN column
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `'${NBD_SHEET_NAME}'!AN8:AN`,
-    });
-
-    const rows = response.data.values || [];
-    let bdm4Count = 0;
-    let bdm5Count = 0;
-
-    rows.forEach((row) => {
-      const val = row[0] ? row[0].trim() : "";
-      if (val === "BDM4") bdm4Count++;
-      if (val === "BDM5") bdm5Count++;
-    });
-
-    // Assign to whoever has fewer leads
-    const assignTo = bdm4Count <= bdm5Count ? "BDM4" : "BDM5";
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `'${NBD_SHEET_NAME}'!AN${rowIndex}`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [[assignTo]] },
-    });
-
-    console.log(`✅ Auto-assigned to ${assignTo} (BDM4: ${bdm4Count}, BDM5: ${bdm5Count})`);
-    return assignTo;
-  } catch (error) {
-    console.error("❌ Auto FSR assign failed:", error.message);
-    return null;
   }
 }
 
@@ -252,23 +199,17 @@ router.post("/update", async (req, res) => {
       updates.push({ range: `'${NBD_SHEET_NAME}'!V${rowIndex}`, values: [[timestamp]] });
       updates.push({ range: `'${NBD_SHEET_NAME}'!W${rowIndex}`, values: [["Not Interested"]] });
     } else {
-      // ✅ DONE — Auto assign FSR if AN column is blank
+      // ✅ DONE
       updates.push({ range: `'${NBD_SHEET_NAME}'!V${rowIndex}`, values: [[timestamp]] });
       updates.push({ range: `'${NBD_SHEET_NAME}'!W${rowIndex}`, values: [[status || "Done"]] });
 
-      // Check if AN is already assigned
-      let currentFSR = "";
-      try {
-        const fsrRes = await req.sheets.spreadsheets.values.get({
-          spreadsheetId: SPREADSHEET_ID,
-          range: `'${NBD_SHEET_NAME}'!AN${rowIndex}`,
-        });
-        currentFSR = fsrRes.data.values?.[0]?.[0]?.trim() || "";
-      } catch (e) {}
-
-      // Auto assign only if AN is blank
-      if (!currentFSR) {
-        await autoAssignFSR(req.sheets, rowIndex);
+      // ✅ Done karne wale FSR ka code AN mein likho
+      if (req.user && req.user.assignedModule === "fsr") {
+        const fsrCode = getFSRCode(req.user);
+        if (fsrCode) {
+          updates.push({ range: `'${NBD_SHEET_NAME}'!AN${rowIndex}`, values: [[fsrCode]] });
+          console.log(`✅ FSR assigned: ${fsrCode} for row ${rowIndex}`);
+        }
       }
     }
 
@@ -295,76 +236,6 @@ router.post("/update", async (req, res) => {
   } catch (error) {
     console.error("❌ NBD Field Visit update failed:", error.message);
     res.status(500).json({ success: false, error: "Failed to update lead", message: error.message });
-  }
-});
-
-// ======================================================
-// POST /migrate-fsr — ONE TIME — Purani blank leads assign
-// ======================================================
-
-router.post("/migrate-fsr", async (req, res) => {
-  try {
-    // Only admin
-    if (req.user.role !== "admin" && req.user.assignedModule !== "all") {
-      return res.status(403).json({ success: false, error: "Admin only" });
-    }
-
-    const response = await req.sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `'${NBD_SHEET_NAME}'!A8:AN`,
-    });
-
-    const rows = response.data.values || [];
-    const updates = [];
-    let bdm4Count = 0;
-    let bdm5Count = 0;
-
-    // Pehle existing counts nikalo
-    rows.forEach((row) => {
-      const an = row[39] ? row[39].trim() : "";
-      if (an === "BDM4") bdm4Count++;
-      if (an === "BDM5") bdm5Count++;
-    });
-
-    // Ab blank wali leads assign karo
-    rows.forEach((row, index) => {
-      const uniqueId = row[1] ? row[1].trim() : "";
-      const an = row[39] ? row[39].trim() : "";
-
-      if (uniqueId && !an) {
-        const assignTo = bdm4Count <= bdm5Count ? "BDM4" : "BDM5";
-        if (assignTo === "BDM4") bdm4Count++;
-        else bdm5Count++;
-
-        updates.push({
-          range: `'${NBD_SHEET_NAME}'!AN${index + 8}`,
-          values: [[assignTo]],
-        });
-      }
-    });
-
-    if (updates.length > 0) {
-      // Batch mein 100-100 karo (Google Sheets limit)
-      const batchSize = 100;
-      for (let i = 0; i < updates.length; i += batchSize) {
-        const batch = updates.slice(i, i + batchSize);
-        await req.sheets.spreadsheets.values.batchUpdate({
-          spreadsheetId: SPREADSHEET_ID,
-          requestBody: { valueInputOption: "USER_ENTERED", data: batch },
-        });
-      }
-    }
-
-    res.json({
-      success: true,
-      message: `Migration complete`,
-      assigned: updates.length,
-      bdm4Total: bdm4Count,
-      bdm5Total: bdm5Count,
-    });
-  } catch (error) {
-    console.error("❌ Migration failed:", error.message);
-    res.status(500).json({ success: false, error: error.message });
   }
 });
 

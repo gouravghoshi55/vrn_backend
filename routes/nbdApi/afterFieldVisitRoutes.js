@@ -4,6 +4,7 @@ const router = express.Router();
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const NBD_SHEET_NAME = "END USER LEADS FMS";
 const LOGGER_SHEET_NAME = "Logger";
+const NOT_INTERESTED_SHEET = "Not intrested reasons";
 
 function getCurrentTimestamp() {
   const now = new Date();
@@ -33,27 +34,16 @@ function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
   if (user.assignedModule === "fsr") return null;
-  const emailToDoerMap = {
-    "bdm1@company.com": "BDM1",
-    "bdm2@company.com": "BDM2",
-    "bdm3@company.com": "BDM3",
-  };
+  const emailToDoerMap = { "bdm1@company.com": "BDM1", "bdm2@company.com": "BDM2", "bdm3@company.com": "BDM3" };
   return emailToDoerMap[user.email?.toLowerCase()] || null;
 }
 
 function getFSRDoerTag(user) {
   if (!user) return null;
   if (user.assignedModule !== "fsr") return null;
-  const fsrMap = {
-    "bdm4@company.com": "BDM4",
-    "bdm5@company.com": "BDM5",
-  };
+  const fsrMap = { "bdm4@company.com": "BDM4", "bdm5@company.com": "BDM5" };
   return fsrMap[user.email?.toLowerCase()] || null;
 }
-
-// ======================================================
-// Logger Sheet mein append karo
-// ======================================================
 
 async function appendToLogger(sheets, lead, status, remarks, timestamp, stepName, userEmail) {
   try {
@@ -63,30 +53,37 @@ async function appendToLogger(sheets, lead, status, remarks, timestamp, stepName
       valueInputOption: "USER_ENTERED",
       insertDataOption: "INSERT_ROWS",
       requestBody: {
-        values: [[
-          timestamp,           // A - Timestamp
-          stepName,            // B - Step
-          lead.uniqueId || "", // C - Unique ID
-          lead.customerName || "", // D - Customer Name
-          lead.customerContact || "", // E - Contact
-          lead.interestedIn || "", // F - Interested In
-          lead.projectSelection || "", // G - Project
-          status,              // H - Status
-          remarks || "",       // I - Remarks
-          userEmail || "",     // J - Updated By
-        ]],
+        values: [[timestamp, stepName, lead.uniqueId || "", lead.customerName || "", lead.customerContact || "", lead.interestedIn || "", lead.projectSelection || "", status, remarks || "", userEmail || ""]],
       },
     });
-    console.log(`✅ Logger entry added for ${lead.uniqueId}`);
   } catch (error) {
     console.error("❌ Logger append failed:", error.message);
-    // Logger fail hone par main update fail mat karo
   }
 }
 
-// ======================================================
-// READ DATA
-// ======================================================
+// ✅ Not Interested Reasons sheet mein append
+async function appendToNotInterestedSheet(sheets, leadInfo, stepName, reason, userEmail) {
+  try {
+    const timestamp = getCurrentTimestamp();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${NOT_INTERESTED_SHEET}'!A:K`,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: [[
+          timestamp, stepName,
+          leadInfo.uniqueId || "", leadInfo.customerName || "", leadInfo.customerContact || "",
+          leadInfo.interestedIn || "", leadInfo.projectSelection || "", leadInfo.leadSource || "",
+          leadInfo.doer || "", reason || "", userEmail || "",
+        ]],
+      },
+    });
+    console.log(`✅ Not Interested reason logged for ${leadInfo.uniqueId}`);
+  } catch (error) {
+    console.error("❌ Not Interested sheet append failed:", error.message);
+  }
+}
 
 async function getFilteredLeads(sheets, user) {
   try {
@@ -102,25 +99,15 @@ async function getFilteredLeads(sheets, user) {
     return rows
       .map((row, index) => {
         const getCol = (idx) => (row[idx] ? String(row[idx]).trim() : "");
+        const plannedDate = getCol(26);
+        const actualDate = getCol(27);
+        const status = getCol(28);
+        const doer = getCol(38);
+        const fsrDoer = getCol(39);
 
-        const plannedDate = getCol(26); // AA
-        const actualDate = getCol(27);  // AB
-        const status = getCol(28);      // AC
-        const doer = getCol(38);        // AM = index 38
-        const fsrDoer = getCol(39);     // AN = index 39 ✅
-
-        const showRow =
-          (plannedDate && !actualDate) ||
-          status === "No conversation" ||
-          status === "Next Follow Up" ||
-          status === "Next Field Visit Required";
-
+        const showRow = (plannedDate && !actualDate) || status === "No conversation" || status === "Next Follow Up" || status === "Next Field Visit Required";
         if (!showRow) return null;
-
-        // BDM1/BDM2/BDM3 filter — AM column
         if (doerTag && doer !== doerTag) return null;
-
-        // FSR filter — AN column
         if (fsrDoerTag && fsrDoer !== fsrDoerTag) return null;
 
         const oldRemarks = getCol(11);
@@ -132,28 +119,13 @@ async function getFilteredLeads(sheets, user) {
         const displayRemarks = currentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
 
         return {
-          rowIndex: index + 8,
-          sheetName: NBD_SHEET_NAME,
-          uniqueId: getCol(1),
-          customerName: getCol(2),
-          customerContact: getCol(3),
-          interestedIn: getCol(4),
-          projectSelection: getCol(5),
-          leadSource: getCol(6),
-          leadGenNumber: getCol(7),
-          leadGenName: getCol(8),
-          importantNote: getCol(10),
-          plannedDate,
-          status: status || "Pending",
-          followUpCount: getCol(31) || "0",
-          fsrDoer, // ✅ AN column
-          remarks: displayRemarks,
-          oldRemarks,
-          previousRemarks,
-          previousRemarksDate,
-          latestOldRemarks,
-          latestOldRemarksDate,
-          doer,
+          rowIndex: index + 8, sheetName: NBD_SHEET_NAME,
+          uniqueId: getCol(1), customerName: getCol(2), customerContact: getCol(3),
+          interestedIn: getCol(4), projectSelection: getCol(5), leadSource: getCol(6),
+          leadGenNumber: getCol(7), leadGenName: getCol(8), importantNote: getCol(10),
+          plannedDate, status: status || "Pending", followUpCount: getCol(31) || "0",
+          fsrDoer, remarks: displayRemarks, oldRemarks, previousRemarks, previousRemarksDate,
+          latestOldRemarks, latestOldRemarksDate, doer,
         };
       })
       .filter(Boolean);
@@ -163,20 +135,11 @@ async function getFilteredLeads(sheets, user) {
   }
 }
 
-// ======================================================
-// GET /list
-// ======================================================
-
 router.get("/list", async (req, res) => {
   try {
-    console.log("📊 Fetching NBD After Field Visit data...");
     const leads = await getFilteredLeads(req.sheets, req.user);
     leads.sort((a, b) => {
-      const parse = (d) => {
-        if (!d) return 0;
-        const p = d.split(/[\/ :]/);
-        return new Date(p[2], p[1] - 1, p[0], p[3] || 0, p[4] || 0).getTime();
-      };
+      const parse = (d) => { if (!d) return 0; const p = d.split(/[\/ :]/); return new Date(p[2], p[1] - 1, p[0], p[3] || 0, p[4] || 0).getTime(); };
       return parse(a.plannedDate) - parse(b.plannedDate);
     });
     res.json({ success: true, data: leads, total: leads.length });
@@ -186,24 +149,15 @@ router.get("/list", async (req, res) => {
   }
 });
 
-// ======================================================
-// POST /update
-// ======================================================
-
 router.post("/update", async (req, res) => {
   try {
-    const { rowIndex, status, remarks, rescheduleDate, dealMeetingDate, leadInfo } = req.body;
+    const { rowIndex, status, remarks, rescheduleDate, dealMeetingDate, leadInfo, notInterestedReason } = req.body;
 
-    if (!rowIndex) {
-      return res.status(400).json({ success: false, error: "Missing rowIndex" });
-    }
+    if (!rowIndex) return res.status(400).json({ success: false, error: "Missing rowIndex" });
 
     let currentCount = 0;
     try {
-      const countRes = await req.sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `'${NBD_SHEET_NAME}'!AF${rowIndex}`,
-      });
+      const countRes = await req.sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${NBD_SHEET_NAME}'!AF${rowIndex}` });
       currentCount = parseInt(countRes.data.values?.[0]?.[0]) || 0;
     } catch (e) {}
 
@@ -213,16 +167,20 @@ router.post("/update", async (req, res) => {
 
     updates.push({ range: `'${NBD_SHEET_NAME}'!AF${rowIndex}`, values: [[newCount]] });
 
-    // ✅ AN column — FSR assignment hai, field visit count nahi
-    // Next Field Visit Required pe AN column touch nahi karenge
-
     if (remarks && String(remarks).trim()) {
       updates.push({ range: `'${NBD_SHEET_NAME}'!AG${rowIndex}`, values: [[String(remarks).trim()]] });
     }
 
-    if (
-      rescheduleDate &&
-      String(rescheduleDate).trim() !== "" &&
+    if (status === "Not Interested") {
+      updates.push({ range: `'${NBD_SHEET_NAME}'!AB${rowIndex}`, values: [[timestamp]] });
+      updates.push({ range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`, values: [["Not Interested"]] });
+
+      // ✅ Log to Not Interested Reasons sheet
+      if (leadInfo) {
+        await appendToNotInterestedSheet(req.sheets, leadInfo, "Step 3 - After Field Visit", notInterestedReason || "", req.user?.email);
+      }
+    } else if (
+      rescheduleDate && String(rescheduleDate).trim() !== "" &&
       ["No conversation", "Next Follow Up", "Next Field Visit Required"].includes(status || "")
     ) {
       const formatted = formatDateToSheetStyle(rescheduleDate);
@@ -232,7 +190,6 @@ router.post("/update", async (req, res) => {
     } else {
       updates.push({ range: `'${NBD_SHEET_NAME}'!AB${rowIndex}`, values: [[timestamp]] });
       updates.push({ range: `'${NBD_SHEET_NAME}'!AC${rowIndex}`, values: [[status || "Done"]] });
-
       if (dealMeetingDate) {
         updates.push({ range: `'${NBD_SHEET_NAME}'!AD${rowIndex}`, values: [[formatDateToSheetStyle(dealMeetingDate)]] });
       }
@@ -243,20 +200,10 @@ router.post("/update", async (req, res) => {
       requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
 
-    // ✅ Logger mein append karo — sirf Next Field Visit Required pe
     if (status === "Next Field Visit Required" && leadInfo) {
-      await appendToLogger(
-        req.sheets,
-        leadInfo,
-        status,
-        remarks,
-        timestamp,
-        "After Field Visit Follow-Up",
-        req.user?.email
-      );
+      await appendToLogger(req.sheets, leadInfo, status, remarks, timestamp, "After Field Visit Follow-Up", req.user?.email);
     }
 
-    console.log(`✅ NBD After Field Visit updated: Row ${rowIndex}`);
     res.json({ success: true, message: "Updated successfully", newFollowUpCount: newCount });
   } catch (error) {
     console.error("❌ NBD After Field Visit update failed:", error);

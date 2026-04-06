@@ -3,7 +3,7 @@ const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const NBD_SHEET_NAME = "END USER LEADS FMS";
-const LOGGER_SHEET_NAME = "Logger";
+const NOT_INTERESTED_SHEET = "Not intrested reasons";
 
 function getCurrentTimestamp() {
   const now = new Date();
@@ -47,33 +47,50 @@ function parseDate(dateStr) {
   return new Date(dateStr);
 }
 
-// ✅ Get FSR code from user email
 function getFSRCode(user) {
   if (!user) return null;
-  const fsrMap = {
-    "bdm4@company.com": "BDM4",
-    "bdm5@company.com": "BDM5",
-  };
+  const fsrMap = { "bdm4@company.com": "BDM4", "bdm5@company.com": "BDM5" };
   return fsrMap[user.email?.toLowerCase()] || null;
 }
 
-// ✅ Get doerTag — AM column filter (BDM1/BDM2/BDM3 only)
 function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
-  // FSR users — AM column se filter nahi
   if (user.assignedModule === "fsr") return null;
-  const emailToDoerMap = {
-    "bdm1@company.com": "BDM1",
-    "bdm2@company.com": "BDM2",
-    "bdm3@company.com": "BDM3",
-  };
+  const emailToDoerMap = { "bdm1@company.com": "BDM1", "bdm2@company.com": "BDM2", "bdm3@company.com": "BDM3" };
   return emailToDoerMap[user.email?.toLowerCase()] || null;
 }
 
-// ======================================================
-// READ DATA - NBD Field Visit
-// ======================================================
+// ✅ Not Interested Reasons sheet mein append
+async function appendToNotInterestedSheet(sheets, leadInfo, stepName, reason, userEmail) {
+  try {
+    const timestamp = getCurrentTimestamp();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${NOT_INTERESTED_SHEET}'!A:K`,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: [[
+          timestamp,
+          stepName,
+          leadInfo.uniqueId || "",
+          leadInfo.customerName || "",
+          leadInfo.customerContact || "",
+          leadInfo.interestedIn || "",
+          leadInfo.projectSelection || "",
+          leadInfo.leadSource || "",
+          leadInfo.doer || "",
+          reason || "",
+          userEmail || "",
+        ]],
+      },
+    });
+    console.log(`✅ Not Interested reason logged for ${leadInfo.uniqueId}`);
+  } catch (error) {
+    console.error("❌ Not Interested sheet append failed:", error.message);
+  }
+}
 
 async function getFilteredLeads(sheets, user) {
   try {
@@ -84,33 +101,26 @@ async function getFilteredLeads(sheets, user) {
 
     const rows = response.data.values || [];
     const filteredLeads = [];
-
     const doerTag = getDoerTag(user);
 
     rows.forEach((row, index) => {
       const importantNote = row[10] ? row[10].trim() : "";
       const plannedDate = row[20] ? row[20].trim() : "";
-      const actualDate = row[21] ? row[21].trim() : "";
       const status = row[22] ? row[22].trim() : "";
       const oldRemarks = row[11] ? row[11].trim() : "";
       const previousRemarksDate = row[13] ? row[13].trim() : "";
       const previousRemarks = row[19] ? row[19].trim() : "";
       const latestRemarks = row[24] ? row[24].trim() : "";
       const followupCount = row[25] ? parseInt(row[25].trim(), 10) || 0 : 0;
-      const doer = row[38] ? row[38].trim() : "";   // AM = index 38
-      const fsrDoer = row[39] ? row[39].trim() : ""; // AN = index 39
+      const doer = row[38] ? row[38].trim() : "";
+      const fsrDoer = row[39] ? row[39].trim() : "";
 
       let displayRemarks = latestRemarks || previousRemarks || oldRemarks;
-
       const showRow = !status || status.trim().toLowerCase() === "rescheduled";
 
       if (showRow && plannedDate) {
-        // ✅ BDM1/BDM2/BDM3 filter — AM column
         if (doerTag && doer !== doerTag) return;
-
-        // ✅ FSR users — Field Visit mein saari leads dikhao
-        // AN filter NAHI lagana — dono FSR ko saari pending leads dikhengi
-        // Jab koi FSR "Done" karega tab AN mein uska code likhega
+        // ✅ FSR users — Field Visit mein saari leads dikhao (AN filter nahi)
 
         filteredLeads.push({
           rowIndex: index + 8,
@@ -132,7 +142,7 @@ async function getFilteredLeads(sheets, user) {
           previousRemarks,
           previousRemarksDate,
           doer,
-          fsrDoer, // ✅
+          fsrDoer,
         });
       }
     });
@@ -144,13 +154,8 @@ async function getFilteredLeads(sheets, user) {
   }
 }
 
-// ======================================================
-// GET /list
-// ======================================================
-
 router.get("/list", async (req, res) => {
   try {
-    console.log("📊 Fetching NBD Field Visit data...");
     const leads = await getFilteredLeads(req.sheets, req.user);
     leads.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
     res.json({ success: true, data: leads, total: leads.length });
@@ -160,13 +165,9 @@ router.get("/list", async (req, res) => {
   }
 });
 
-// ======================================================
-// POST /update
-// ======================================================
-
 router.post("/update", async (req, res) => {
   try {
-    const { rowIndex, status, remarks, rescheduleDate } = req.body;
+    const { rowIndex, status, remarks, rescheduleDate, notInterestedReason, leadInfo } = req.body;
 
     if (!rowIndex) {
       return res.status(400).json({ success: false, error: "Missing rowIndex" });
@@ -175,7 +176,6 @@ router.post("/update", async (req, res) => {
     const updates = [];
     const timestamp = getCurrentTimestamp();
 
-    // Followup Count
     let currentFollowupCount = 0;
     try {
       const countResponse = await req.sheets.spreadsheets.values.get({
@@ -184,9 +184,7 @@ router.post("/update", async (req, res) => {
       });
       const val = countResponse.data.values?.[0]?.[0];
       currentFollowupCount = val ? parseInt(String(val).trim(), 10) || 0 : 0;
-    } catch (e) {
-      console.warn(`⚠️ Could not read followup count:`, e.message);
-    }
+    } catch (e) {}
 
     const newFollowupCount = currentFollowupCount + 1;
     updates.push({ range: `'${NBD_SHEET_NAME}'!Z${rowIndex}`, values: [[newFollowupCount]] });
@@ -198,8 +196,12 @@ router.post("/update", async (req, res) => {
     } else if (status === "Not Interested") {
       updates.push({ range: `'${NBD_SHEET_NAME}'!V${rowIndex}`, values: [[timestamp]] });
       updates.push({ range: `'${NBD_SHEET_NAME}'!W${rowIndex}`, values: [["Not Interested"]] });
+
+      // ✅ Log to Not Interested Reasons sheet
+      if (leadInfo) {
+        await appendToNotInterestedSheet(req.sheets, leadInfo, "Step 2 - Field Visit", notInterestedReason || "", req.user?.email);
+      }
     } else {
-      // ✅ DONE
       updates.push({ range: `'${NBD_SHEET_NAME}'!V${rowIndex}`, values: [[timestamp]] });
       updates.push({ range: `'${NBD_SHEET_NAME}'!W${rowIndex}`, values: [[status || "Done"]] });
 
@@ -208,7 +210,6 @@ router.post("/update", async (req, res) => {
         const fsrCode = getFSRCode(req.user);
         if (fsrCode) {
           updates.push({ range: `'${NBD_SHEET_NAME}'!AN${rowIndex}`, values: [[fsrCode]] });
-          console.log(`✅ FSR assigned: ${fsrCode} for row ${rowIndex}`);
         }
       }
     }
@@ -222,15 +223,9 @@ router.post("/update", async (req, res) => {
       requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
 
-    console.log(`✅ NBD Field Visit updated: Row ${rowIndex}`);
-
     res.json({
       success: true,
-      message: rescheduleDate
-        ? "Visit Rescheduled successfully"
-        : status === "Not Interested"
-        ? "Marked as Not Interested"
-        : "Field Visit marked as Done",
+      message: rescheduleDate ? "Visit Rescheduled successfully" : status === "Not Interested" ? "Marked as Not Interested" : "Field Visit marked as Done",
       newFollowupCount,
     });
   } catch (error) {

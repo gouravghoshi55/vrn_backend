@@ -4,6 +4,7 @@ const router = express.Router();
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SHEET_NAME = "END USER LEADS FMS";
 const LOGGER_SHEET_NAME = "Logger";
+const NOT_INTERESTED_SHEET = "Not intrested reasons";
 
 function getCurrentTimestamp() {
   const now = new Date();
@@ -46,27 +47,16 @@ function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
   if (user.assignedModule === "fsr") return null;
-  const emailToDoerMap = {
-    "bdm1@company.com": "BDM1",
-    "bdm2@company.com": "BDM2",
-    "bdm3@company.com": "BDM3",
-  };
+  const emailToDoerMap = { "bdm1@company.com": "BDM1", "bdm2@company.com": "BDM2", "bdm3@company.com": "BDM3" };
   return emailToDoerMap[user.email?.toLowerCase()] || null;
 }
 
 function getFSRDoerTag(user) {
   if (!user) return null;
   if (user.assignedModule !== "fsr") return null;
-  const fsrMap = {
-    "bdm4@company.com": "BDM4",
-    "bdm5@company.com": "BDM5",
-  };
+  const fsrMap = { "bdm4@company.com": "BDM4", "bdm5@company.com": "BDM5" };
   return fsrMap[user.email?.toLowerCase()] || null;
 }
-
-// ======================================================
-// Logger Sheet append
-// ======================================================
 
 async function appendToLogger(sheets, lead, status, remarks, timestamp, stepName, userEmail) {
   try {
@@ -76,29 +66,37 @@ async function appendToLogger(sheets, lead, status, remarks, timestamp, stepName
       valueInputOption: "USER_ENTERED",
       insertDataOption: "INSERT_ROWS",
       requestBody: {
-        values: [[
-          timestamp,
-          stepName,
-          lead.uniqueId || "",
-          lead.customerName || "",
-          lead.customerContact || "",
-          lead.interestedIn || "",
-          lead.projectSelection || "",
-          status,
-          remarks || "",
-          userEmail || "",
-        ]],
+        values: [[timestamp, stepName, lead.uniqueId || "", lead.customerName || "", lead.customerContact || "", lead.interestedIn || "", lead.projectSelection || "", status, remarks || "", userEmail || ""]],
       },
     });
-    console.log(`✅ Logger entry added for ${lead.uniqueId}`);
   } catch (error) {
     console.error("❌ Logger append failed:", error.message);
   }
 }
 
-// ======================================================
-// FETCH LIST
-// ======================================================
+// ✅ Not Interested Reasons sheet mein append
+async function appendToNotInterestedSheet(sheets, leadInfo, stepName, reason, userEmail) {
+  try {
+    const timestamp = getCurrentTimestamp();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${NOT_INTERESTED_SHEET}'!A:K`,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: [[
+          timestamp, stepName,
+          leadInfo.uniqueId || "", leadInfo.customerName || "", leadInfo.customerContact || "",
+          leadInfo.interestedIn || "", leadInfo.projectSelection || "", leadInfo.leadSource || "",
+          leadInfo.doer || "", reason || "", userEmail || "",
+        ]],
+      },
+    });
+    console.log(`✅ Not Interested reason logged for ${leadInfo.uniqueId}`);
+  } catch (error) {
+    console.error("❌ Not Interested sheet append failed:", error.message);
+  }
+}
 
 async function getFilteredLeads(sheets, user) {
   const response = await sheets.spreadsheets.values.get({
@@ -113,10 +111,9 @@ async function getFilteredLeads(sheets, user) {
 
   rows.forEach((row, index) => {
     const plannedDate = row[33] ? row[33].trim() : "";
-    const actualDate = row[34] ? row[34].trim() : "";
     let status = row[35] ? row[35].trim() : "";
-    const doer = row[38] ? row[38].trim() : "";   // AM = index 38
-    const fsrDoer = row[39] ? row[39].trim() : ""; // AN = index 39
+    const doer = row[38] ? row[38].trim() : "";
+    const fsrDoer = row[39] ? row[39].trim() : "";
 
     const oldRemarks = row[11] ? row[11].trim() : "";
     const previousRemarksDate = row[13] ? row[13].trim() : "";
@@ -129,54 +126,25 @@ async function getFilteredLeads(sheets, user) {
 
     const displayRemarks = currentRemarks || recentRemarks || latestOldRemarks || previousRemarks || oldRemarks;
 
-    const showRow = plannedDate && (
-      !status ||
-      status.trim().toLowerCase() === "rescheduled" ||
-      status.trim().toLowerCase() === "next field visit required"
-    );
-
+    const showRow = plannedDate && (!status || status.trim().toLowerCase() === "rescheduled" || status.trim().toLowerCase() === "next field visit required");
     if (!showRow) return;
-
-    // BDM1/BDM2/BDM3 filter
     if (doerTag && doer !== doerTag) return;
-
-    // FSR filter — AN column
     if (fsrDoerTag && fsrDoer !== fsrDoerTag) return;
-
     if (!status.trim()) status = "Pending";
 
     filtered.push({
-      rowIndex: index + 8,
-      sheetName: SHEET_NAME,
-      uniqueId: row[1] || "",
-      customerName: row[2] || "",
-      customerContact: row[3] || "",
-      interestedIn: row[4] || "",
-      projectSelection: row[5] || "",
-      leadSource: row[6] || "",
-      leadGenNumber: row[7] || "",
-      leadGenName: row[8] || "",
-      plannedDate,
-      status,
-      fsrDoer, // ✅
-      remarks: displayRemarks,
-      oldRemarks,
-      previousRemarks,
-      previousRemarksDate,
-      latestOldRemarks,
-      latestOldRemarksDate,
-      recentRemarks,
-      recentRemarksDate,
-      doer,
+      rowIndex: index + 8, sheetName: SHEET_NAME,
+      uniqueId: row[1] || "", customerName: row[2] || "", customerContact: row[3] || "",
+      interestedIn: row[4] || "", projectSelection: row[5] || "", leadSource: row[6] || "",
+      leadGenNumber: row[7] || "", leadGenName: row[8] || "",
+      plannedDate, status, fsrDoer, remarks: displayRemarks,
+      oldRemarks, previousRemarks, previousRemarksDate,
+      latestOldRemarks, latestOldRemarksDate, recentRemarks, recentRemarksDate, doer,
     });
   });
 
   return filtered;
 }
-
-// ======================================================
-// ROUTES
-// ======================================================
 
 router.get("/list", async (req, res) => {
   try {
@@ -191,45 +159,43 @@ router.get("/list", async (req, res) => {
 
 router.post("/update", async (req, res) => {
   try {
-    const { rowIndex, status, rescheduleDate, nextFieldVisitDate, remarks, leadInfo } = req.body;
-    const sheetName = SHEET_NAME;
+    const { rowIndex, status, rescheduleDate, nextFieldVisitDate, remarks, leadInfo, notInterestedReason } = req.body;
 
     if (!rowIndex) return res.status(400).json({ success: false, error: "Missing rowIndex" });
 
     const timestamp = getCurrentTimestamp();
     const updates = [];
 
-    // Followup count
     let currentFollowupCount = 0;
     try {
-      const countRes = await req.sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `'${sheetName}'!Z${rowIndex}`,
-      });
+      const countRes = await req.sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${SHEET_NAME}'!Z${rowIndex}` });
       currentFollowupCount = parseInt(countRes.data.values?.[0]?.[0]) || 0;
     } catch (e) {}
     const newFollowupCount = currentFollowupCount + 1;
-    updates.push({ range: `'${sheetName}'!Z${rowIndex}`, values: [[newFollowupCount]] });
-
-    // ✅ AN column — FSR assignment hai, touch nahi karna
+    updates.push({ range: `'${SHEET_NAME}'!Z${rowIndex}`, values: [[newFollowupCount]] });
 
     if (rescheduleDate && String(rescheduleDate).trim() !== "") {
-      updates.push({ range: `'${sheetName}'!AH${rowIndex}`, values: [[getPlannedDateTime(rescheduleDate)]] });
-      updates.push({ range: `'${sheetName}'!AJ${rowIndex}`, values: [["Rescheduled"]] });
+      updates.push({ range: `'${SHEET_NAME}'!AH${rowIndex}`, values: [[getPlannedDateTime(rescheduleDate)]] });
+      updates.push({ range: `'${SHEET_NAME}'!AJ${rowIndex}`, values: [["Rescheduled"]] });
     } else if (status === "Next Field Visit Required" && nextFieldVisitDate && String(nextFieldVisitDate).trim() !== "") {
-      updates.push({ range: `'${sheetName}'!AH${rowIndex}`, values: [[getPlannedDateTime(nextFieldVisitDate)]] });
-      updates.push({ range: `'${sheetName}'!AJ${rowIndex}`, values: [["Next Field Visit Required"]] });
+      updates.push({ range: `'${SHEET_NAME}'!AH${rowIndex}`, values: [[getPlannedDateTime(nextFieldVisitDate)]] });
+      updates.push({ range: `'${SHEET_NAME}'!AJ${rowIndex}`, values: [["Next Field Visit Required"]] });
     } else if (["Not Interested", "Negotiation Failed", "Deal Not Done"].includes(status)) {
-      updates.push({ range: `'${sheetName}'!AI${rowIndex}`, values: [[timestamp]] });
-      updates.push({ range: `'${sheetName}'!AJ${rowIndex}`, values: [[status]] });
-      updates.push({ range: `'${sheetName}'!AH${rowIndex}`, values: [[""]] });
+      updates.push({ range: `'${SHEET_NAME}'!AI${rowIndex}`, values: [[timestamp]] });
+      updates.push({ range: `'${SHEET_NAME}'!AJ${rowIndex}`, values: [[status]] });
+      updates.push({ range: `'${SHEET_NAME}'!AH${rowIndex}`, values: [[""]] });
+
+      // ✅ Log to Not Interested Reasons sheet
+      if (leadInfo) {
+        await appendToNotInterestedSheet(req.sheets, leadInfo, "Step 4 - Meeting", notInterestedReason || "", req.user?.email);
+      }
     } else {
-      updates.push({ range: `'${sheetName}'!AI${rowIndex}`, values: [[timestamp]] });
-      updates.push({ range: `'${sheetName}'!AJ${rowIndex}`, values: [[status || "Done"]] });
+      updates.push({ range: `'${SHEET_NAME}'!AI${rowIndex}`, values: [[timestamp]] });
+      updates.push({ range: `'${SHEET_NAME}'!AJ${rowIndex}`, values: [[status || "Done"]] });
     }
 
     if (remarks && String(remarks).trim() !== "") {
-      updates.push({ range: `'${sheetName}'!AL${rowIndex}`, values: [[String(remarks).trim()]] });
+      updates.push({ range: `'${SHEET_NAME}'!AL${rowIndex}`, values: [[String(remarks).trim()]] });
     }
 
     await req.sheets.spreadsheets.values.batchUpdate({
@@ -237,27 +203,15 @@ router.post("/update", async (req, res) => {
       requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
 
-    // ✅ Logger mein append — sirf Next Field Visit Required pe
     if (status === "Next Field Visit Required" && leadInfo) {
-      await appendToLogger(
-        req.sheets,
-        leadInfo,
-        status,
-        remarks,
-        timestamp,
-        "Meeting",
-        req.user?.email
-      );
+      await appendToLogger(req.sheets, leadInfo, status, remarks, timestamp, "Meeting", req.user?.email);
     }
 
     res.json({
       success: true,
-      message: rescheduleDate
-        ? "Rescheduled Successfully"
-        : status === "Next Field Visit Required"
-        ? "Next Field Visit Scheduled Successfully"
-        : ["Not Interested", "Negotiation Failed", "Deal Not Done"].includes(status)
-        ? "Marked as " + status
+      message: rescheduleDate ? "Rescheduled Successfully"
+        : status === "Next Field Visit Required" ? "Next Field Visit Scheduled Successfully"
+        : ["Not Interested", "Negotiation Failed", "Deal Not Done"].includes(status) ? "Marked as " + status
         : "Updated Successfully",
       newFollowupCount,
     });

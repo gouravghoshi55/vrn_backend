@@ -8,13 +8,16 @@ const PORT = process.env.PORT || 5000;
 // ============================================
 // Middleware
 // ============================================
-// 1. CORS
+
+// 1. CORS (Pehle daalo)
 app.use(cors({
   origin: "https://vrn-sales.vercel.app",
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
 }));
 
-// 2. Handle OPTIONS Preflight
+// 2. Handle OPTIONS Preflight (Safe & Working)
 app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', 'https://vrn-sales.vercel.app');
@@ -24,6 +27,8 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// 3. Body Parsing
 app.use(express.json());
 
 // ============================================
@@ -100,10 +105,6 @@ app.use("/api/field-visit", protect, nbdFieldVisitRoutes);
 app.use("/api/after-field-visit", protect, nbdAfterFieldVisitRoutes);
 app.use("/api/meeting-nbd", protect, nbdMeetingRoutes);
 
-// ✅ Migration route — admin only, ek baar chalana hai
-// POST /api/field-visit/migrate-fsr
-// (fieldVisitRoutes ke andar hi define hai, alag mount nahi karna)
-
 // CP APIs
 app.use("/api/cp/followup", cpFollowupRoutes);
 app.use("/api/cp/field-visit", cpFieldVisitRoutes);
@@ -149,7 +150,7 @@ app.use((err, req, res, next) => {
 // ============================================
 // Start Server
 // ============================================
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`🔐 Auth API: /api/auth/login`);
   console.log(`\n📊 ===== NBD APIs (END USER) =====`);
@@ -157,7 +158,6 @@ app.listen(PORT, () => {
   console.log(`   Field Visit:       /api/field-visit/list`);
   console.log(`   After Field Visit: /api/after-field-visit/list`);
   console.log(`   Meeting:           /api/meeting-nbd/list`);
-  console.log(`   Migration (1x):    POST /api/field-visit/migrate-fsr`);
   console.log(`\n📊 ===== CP APIs (Channel Partner) =====`);
   console.log(`   Follow-up:         /api/cp/followup/can-contact/list`);
   console.log(`   Follow-up:         /api/cp/followup/cannot-contact/list`);

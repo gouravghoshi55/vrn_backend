@@ -153,12 +153,14 @@ async function searchInSheet(sheets, spreadsheetId, sheetName, searchTerm, sheet
       const customerName = row[2] ? row[2].trim().toLowerCase() : "";
       const customerContact = row[3] ? row[3].trim() : "";
       const uniqueId = row[1] ? row[1].trim().toLowerCase() : "";
+      const leadGenName = row[8] ? row[8].trim().toLowerCase() : "";
 
       // Search by name, contact, or unique ID
       const isMatch = 
         customerName.includes(searchLower) ||
         customerContact.includes(searchLower) ||
-        uniqueId.includes(searchLower);
+        uniqueId.includes(searchLower) ||
+        leadGenName.includes(searchLower);
 
       if (isMatch) {
         const leadInfo = detectLeadStep(row);

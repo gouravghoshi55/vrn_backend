@@ -8,10 +8,22 @@ const PORT = process.env.PORT || 5000;
 // ============================================
 // Middleware
 // ============================================
+// 1. CORS
 app.use(cors({
   origin: "https://vrn-sales.vercel.app",
   credentials: true,
 }));
+
+// 2. Handle OPTIONS Preflight
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', 'https://vrn-sales.vercel.app');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    return res.status(200).end();
+  }
+  next();
+});
 app.use(express.json());
 
 // ============================================

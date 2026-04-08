@@ -171,3 +171,5 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`   Booking:           /api/cp/booking/cannot-contact/list`);
   console.log(`   Lead Form:         /api/cp/lead-form/list`);
 });
+
+module.exports = app;

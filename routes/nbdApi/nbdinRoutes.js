@@ -60,7 +60,7 @@ function getShortTimestamp() {
 function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
-  const emailToDoerMap = { "bdm1@company.com": "BDM1", "bdm2@company.com": "BDM2" };
+  const emailToDoerMap = { "bdm1@company.com": "BDM1", "bdm2@company.com": "BDM2" , "bdm6@company.com": "BDM6"};
   return emailToDoerMap[user.email?.toLowerCase()] || null;
 }
 

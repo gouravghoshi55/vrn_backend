@@ -35,7 +35,7 @@ function parseDate(dateStr) {
   return new Date(dateStr);
 }
 
-function getFSRCode(user) { if (!user) return null; const m = {"bdm4@company.com":"BDM4","bdm5@company.com":"BDM5"}; return m[user.email?.toLowerCase()] || null; }
+function getFSRCode(user) { if (!user) return null; const m = {"bdm4@company.com":"BDM4","bdm5@company.com":"BDM5" , "bdm6@company.com": "BDM6"}; return m[user.email?.toLowerCase()] || null; }
 function getDoerTag(user) { if (!user) return null; if (user.role==="admin"||user.assignedModule==="all") return null; if (user.assignedModule==="fsr") return null; const m={"bdm1@company.com":"BDM1","bdm2@company.com":"BDM2","bdm3@company.com":"BDM3"}; return m[user.email?.toLowerCase()]||null; }
 
 // ✅ Read existing remarks, prepend new with timestamp

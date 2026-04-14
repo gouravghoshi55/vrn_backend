@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const CP_SHEET_NAME = "Channel Partner Lead FMS"; // ✅ Only CP sheet
+const CP_SHEET_NAME = "Channel Partner Lead FMS";
 
 // ======================================================
 // HELPERS
@@ -58,34 +58,29 @@ async function getFilteredCPLeads(sheets, category) {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${CP_SHEET_NAME}'!A8:AM`, // Extended to AT for Can Contact column
+      range: `'${CP_SHEET_NAME}'!A8:AM`,
     });
 
     const rows = response.data.values || [];
     const filteredLeads = [];
 
     rows.forEach((row, index) => {
-      const importantNote = row[10] ? row[10].trim() : "";     // K
-      const plannedDate = row[20] ? row[20].trim() : "";       // U
-      const actualDate = row[21] ? row[21].trim() : "";        // V
-      const status = row[22] ? row[22].trim() : "";            // W
+      const importantNote = row[10] ? row[10].trim() : "";
+      const plannedDate = row[20] ? row[20].trim() : "";
+      const actualDate = row[21] ? row[21].trim() : "";
+      const status = row[22] ? row[22].trim() : "";
+      const oldRemarks = row[11] ? row[11].trim() : "";
+      const previousRemarksDate = row[13] ? row[13].trim() : "";
+      const previousRemarks = row[19] ? row[19].trim() : "";
+      const latestRemarks = row[24] ? row[24].trim() : "";
+      const followupCount = row[25] ? parseInt(row[25].trim(), 10) || 0 : 0;
+      const canContact = row[38] ? row[38].trim() : "";
 
-      // ===== REMARKS COLUMNS =====
-      const oldRemarks = row[11] ? row[11].trim() : "";        // L
-      const previousRemarksDate = row[13] ? row[13].trim() : ""; // N
-      const previousRemarks = row[19] ? row[19].trim() : "";   // T
-      const latestRemarks = row[24] ? row[24].trim() : "";     // Y
-      const followupCount = row[25] ? parseInt(row[25].trim(), 10) || 0 : 0; // Z
-
-      const canContact = row[38] ? row[38].trim() : ""; 
-
-      // ===== CATEGORY FILTER =====
       const categoryMatch =
         (category === "can-contact" && canContact === "Yes") ||
-        (category === "cannot-contact" && (canContact === "No" || canContact ===""));
+        (category === "cannot-contact" && (canContact === "No" || canContact === ""));
       if (!categoryMatch) return;
 
-      // Display logic: Y > T > L
       let displayRemarks = "";
       if (latestRemarks) {
         displayRemarks = latestRemarks;
@@ -95,8 +90,9 @@ async function getFilteredCPLeads(sheets, category) {
         displayRemarks = oldRemarks;
       }
 
-      // Show only if status is empty or "Rescheduled"
-      const showRow = !status || status.trim().toLowerCase() === "rescheduled";
+      // ✅ Show: empty, Rescheduled, No Connection
+      const statusLower = status.trim().toLowerCase();
+      const showRow = !status || statusLower === "rescheduled" || statusLower === "no connection";
 
       if (showRow && plannedDate) {
         filteredLeads.push({
@@ -110,15 +106,15 @@ async function getFilteredCPLeads(sheets, category) {
           leadSource: row[6] || "",
           leadGenNumber: row[7] || "",
           leadGenName: row[8] || "",
-          importantNote: importantNote,
-          plannedDate: plannedDate,
+          importantNote,
+          plannedDate,
           status: status || "Pending",
-          followupCount: followupCount,
+          followupCount,
           remarks: displayRemarks,
-          oldRemarks: oldRemarks,
-          previousRemarks: previousRemarks,
-          previousRemarksDate: previousRemarksDate,
-          canContact: canContact,
+          oldRemarks,
+          previousRemarks,
+          previousRemarksDate,
+          canContact,
         });
       }
     });
@@ -131,72 +127,37 @@ async function getFilteredCPLeads(sheets, category) {
 }
 
 // ======================================================
-// GET ENDPOINTS - CP Field Visit
+// GET ENDPOINTS
 // ======================================================
 
-// Can Contact List
 router.get("/can-contact/list", async (req, res) => {
   try {
     console.log("📊 Fetching CP Can Contact Field Visit data...");
-
     const leads = await getFilteredCPLeads(req.sheets, "can-contact");
-
-    leads.sort((a, b) => {
-      const dateA = parseDate(a.plannedDate);
-      const dateB = parseDate(b.plannedDate);
-      return dateA - dateB;
-    });
-
-    res.json({
-      success: true,
-      data: leads,
-      total: leads.length,
-      category: "can-contact",
-    });
+    leads.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
+    res.json({ success: true, data: leads, total: leads.length, category: "can-contact" });
   } catch (error) {
     console.error("❌ Error:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to fetch leads",
-      message: error.message,
-    });
+    res.status(500).json({ success: false, error: "Failed to fetch leads", message: error.message });
   }
 });
 
-// Cannot Contact List
 router.get("/cannot-contact/list", async (req, res) => {
   try {
     console.log("📊 Fetching CP Cannot Contact Field Visit data...");
-
     const leads = await getFilteredCPLeads(req.sheets, "cannot-contact");
-
-    leads.sort((a, b) => {
-      const dateA = parseDate(a.plannedDate);
-      const dateB = parseDate(b.plannedDate);
-      return dateA - dateB;
-    });
-
-    res.json({
-      success: true,
-      data: leads,
-      total: leads.length,
-      category: "cannot-contact",
-    });
+    leads.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
+    res.json({ success: true, data: leads, total: leads.length, category: "cannot-contact" });
   } catch (error) {
     console.error("❌ Error:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to fetch leads",
-      message: error.message,
-    });
+    res.status(500).json({ success: false, error: "Failed to fetch leads", message: error.message });
   }
 });
 
 // ======================================================
-// POST ENDPOINTS - CP Field Visit Update
+// POST - Can Contact Update
 // ======================================================
 
-// Can Contact Update
 router.post("/can-contact/update", async (req, res) => {
   try {
     const { rowIndex, status, remarks, rescheduleDate } = req.body;
@@ -204,10 +165,7 @@ router.post("/can-contact/update", async (req, res) => {
     console.log("📝 CP Can Contact Field Visit Update:", { rowIndex, status, rescheduleDate, remarks });
 
     if (!rowIndex) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing rowIndex",
-      });
+      return res.status(400).json({ success: false, error: "Missing rowIndex" });
     }
 
     const updates = [];
@@ -234,8 +192,19 @@ router.post("/can-contact/update", async (req, res) => {
       values: [[newFollowupCount]],
     });
 
-    // Main update logic
-    if (rescheduleDate && String(rescheduleDate).trim() !== "") {
+    // ✅ No Connection — planned date override + status "No Connection"
+    if (status === "No Connection" && rescheduleDate && String(rescheduleDate).trim() !== "") {
+      const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
+      updates.push({
+        range: `'${CP_SHEET_NAME}'!U${rowIndex}`,
+        values: [[newPlannedDateTime]],
+      });
+      updates.push({
+        range: `'${CP_SHEET_NAME}'!W${rowIndex}`,
+        values: [["No Connection"]],
+      });
+    } else if (rescheduleDate && String(rescheduleDate).trim() !== "") {
+      // Reschedule
       const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
       updates.push({
         range: `'${CP_SHEET_NAME}'!U${rowIndex}`,
@@ -275,34 +244,32 @@ router.post("/can-contact/update", async (req, res) => {
 
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
-      requestBody: {
-        valueInputOption: "USER_ENTERED",
-        data: updates,
-      },
+      requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
 
     console.log(`✅ CP Can Contact Field Visit updated: Row ${rowIndex}`);
 
     res.json({
       success: true,
-      message: rescheduleDate
+      message: status === "No Connection"
+        ? "Marked as No Connection"
+        : rescheduleDate
         ? "Visit Rescheduled successfully"
         : status === "Not Interested"
           ? "Marked as Not Interested"
           : "Field Visit marked as Done",
-      newFollowupCount: newFollowupCount,
+      newFollowupCount,
     });
   } catch (error) {
     console.error("❌ Update failed:", error.message);
-    res.status(500).json({
-      success: false,
-      error: "Failed to update lead",
-      message: error.message,
-    });
+    res.status(500).json({ success: false, error: "Failed to update lead", message: error.message });
   }
 });
 
-// Cannot Contact Update
+// ======================================================
+// POST - Cannot Contact Update
+// ======================================================
+
 router.post("/cannot-contact/update", async (req, res) => {
   try {
     const { rowIndex, status, remarks, rescheduleDate } = req.body;
@@ -310,10 +277,7 @@ router.post("/cannot-contact/update", async (req, res) => {
     console.log("📝 CP Cannot Contact Field Visit Update:", { rowIndex, status, rescheduleDate, remarks });
 
     if (!rowIndex) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing rowIndex",
-      });
+      return res.status(400).json({ success: false, error: "Missing rowIndex" });
     }
 
     const updates = [];
@@ -339,7 +303,19 @@ router.post("/cannot-contact/update", async (req, res) => {
       values: [[newFollowupCount]],
     });
 
-    if (rescheduleDate && String(rescheduleDate).trim() !== "") {
+    // ✅ No Connection — planned date override + status "No Connection"
+    if (status === "No Connection" && rescheduleDate && String(rescheduleDate).trim() !== "") {
+      const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
+      updates.push({
+        range: `'${CP_SHEET_NAME}'!U${rowIndex}`,
+        values: [[newPlannedDateTime]],
+      });
+      updates.push({
+        range: `'${CP_SHEET_NAME}'!W${rowIndex}`,
+        values: [["No Connection"]],
+      });
+    } else if (rescheduleDate && String(rescheduleDate).trim() !== "") {
+      // Reschedule
       const newPlannedDateTime = getPlannedDateTime(rescheduleDate);
       updates.push({
         range: `'${CP_SHEET_NAME}'!U${rowIndex}`,
@@ -369,6 +345,7 @@ router.post("/cannot-contact/update", async (req, res) => {
       });
     }
 
+    // Remarks
     if (remarks && String(remarks).trim() !== "") {
       updates.push({
         range: `'${CP_SHEET_NAME}'!Y${rowIndex}`,
@@ -378,30 +355,25 @@ router.post("/cannot-contact/update", async (req, res) => {
 
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
-      requestBody: {
-        valueInputOption: "USER_ENTERED",
-        data: updates,
-      },
+      requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
 
     console.log(`✅ CP Cannot Contact Field Visit updated: Row ${rowIndex}`);
 
     res.json({
       success: true,
-      message: rescheduleDate
+      message: status === "No Connection"
+        ? "Marked as No Connection"
+        : rescheduleDate
         ? "Visit Rescheduled successfully"
         : status === "Not Interested"
           ? "Marked as Not Interested"
           : "Field Visit marked as Done",
-      newFollowupCount: newFollowupCount,
+      newFollowupCount,
     });
   } catch (error) {
     console.error("❌ Update failed:", error.message);
-    res.status(500).json({
-      success: false,
-      error: "Failed to update lead",
-      message: error.message,
-    });
+    res.status(500).json({ success: false, error: "Failed to update lead", message: error.message });
   }
 });
 

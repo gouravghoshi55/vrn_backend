@@ -2,38 +2,49 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { google } = require("googleapis");
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ============================================
-// Middleware
+// ✅ CORS FIX (FINAL)
 // ============================================
 
-// 1. CORS
-app.use(cors({
-  origin: "https://vrn-sales.vercel.app",
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-}));
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://vrn-sales.vercel.app",
+];
 
-// 2. Handle OPTIONS Preflight
-app.use((req, res, next) => {
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', 'https://vrn-sales.vercel.app');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    return res.status(200).end();
-  }
-  next();
-});
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // allow requests with no origin (Postman, mobile apps)
+      if (!origin) return callback(null, true);
 
-// 3. Body Parsing
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      } else {
+        return callback(new Error("CORS not allowed"));
+      }
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
+
+// ❌ REMOVED: app.options("*", cors());  ← THIS WAS CAUSING ERROR
+
+// ============================================
+// Body Parsing
+// ============================================
+
 app.use(express.json());
 
 // ============================================
 // Google Sheets Setup
 // ============================================
+
 const auth = new google.auth.JWT({
   email: process.env.GOOGLE_CLIENT_EMAIL,
   key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
@@ -41,6 +52,7 @@ const auth = new google.auth.JWT({
 });
 
 let sheets;
+
 async function initializeGoogleSheets() {
   try {
     await auth.authorize();
@@ -54,8 +66,9 @@ async function initializeGoogleSheets() {
 initializeGoogleSheets();
 
 // ============================================
-// Middleware - Attach sheets to request
+// Attach sheets to request
 // ============================================
+
 app.use((req, res, next) => {
   if (!sheets) {
     return res.status(503).json({
@@ -70,6 +83,7 @@ app.use((req, res, next) => {
 // ============================================
 // Import Routes
 // ============================================
+
 const { protect } = require("./middleware/authMiddleware");
 
 const authRoutes = require("./routes/authRoutes");
@@ -77,6 +91,7 @@ const nbdinRoutes = require("./routes/nbdApi/nbdinRoutes");
 const nbdFieldVisitRoutes = require("./routes/nbdApi/fieldVisitRoutes");
 const nbdAfterFieldVisitRoutes = require("./routes/nbdApi/afterFieldVisitRoutes");
 const nbdMeetingRoutes = require("./routes/nbdApi/meetingNbdRoutes");
+
 const cpFollowupRoutes = require("./routes/cp/cpFollowupRoutes");
 const cpFieldVisitRoutes = require("./routes/cp/cpFieldVisitRoutes");
 const cpAfterFieldVisitRoutes = require("./routes/cp/cpAfterFieldVisitRoutes");
@@ -84,6 +99,7 @@ const cpMeetingRoutes = require("./routes/cp/cpMeetingRoutes");
 const cpBookingRoutes = require("./routes/cp/cpBookingRoutes");
 const cpLeadFormRoutes = require("./routes/cp/cpLeadFormRoutes");
 const cpContactUpdateRoutes = require("./routes/cp/cpContactUpdateRoutes");
+
 const leadSearchRoutes = require("./routes/leadSearch");
 
 // ============================================
@@ -95,18 +111,21 @@ app.use("/api/leads", protect, nbdinRoutes);
 app.use("/api/field-visit", protect, nbdFieldVisitRoutes);
 app.use("/api/after-field-visit", protect, nbdAfterFieldVisitRoutes);
 app.use("/api/meeting-nbd", protect, nbdMeetingRoutes);
+
 app.use("/api/cp/followup", cpFollowupRoutes);
 app.use("/api/cp/field-visit", cpFieldVisitRoutes);
 app.use("/api/cp/after-field-visit", cpAfterFieldVisitRoutes);
 app.use("/api/cp/meeting", cpMeetingRoutes);
 app.use("/api/cp/booking", cpBookingRoutes);
 app.use("/api/cp/lead-form", cpLeadFormRoutes);
+
 app.use("/cp", cpContactUpdateRoutes);
 app.use("/api/leads", protect, leadSearchRoutes);
 
 // ============================================
 // Health Check
 // ============================================
+
 app.get("/", (req, res) => {
   res.json({
     message: "🚀 Backend Server is Running!",
@@ -126,8 +145,17 @@ app.get("/api/health", (req, res) => {
 // ============================================
 // Global Error Handler
 // ============================================
+
 app.use((err, req, res, next) => {
   console.error("Server Error:", err);
+
+  if (err.message === "CORS not allowed") {
+    return res.status(403).json({
+      success: false,
+      error: "CORS Error: Origin not allowed",
+    });
+  }
+
   res.status(500).json({
     success: false,
     error: "Internal Server Error",
@@ -138,7 +166,8 @@ app.use((err, req, res, next) => {
 // ============================================
 // Start Server
 // ============================================
-app.listen(PORT, "0.0.0.0", () => {
+
+app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
 });
 

@@ -13,7 +13,8 @@ function parseDate(dateStr) {
   if (!dateStr) return new Date(0);
   const parts = dateStr.split(/[\/\-]/);
   if (parts.length === 3) {
-    if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
+    if (parts[0].length === 4)
+      return new Date(parts[0], parts[1] - 1, parts[2]);
     return new Date(parts[2], parts[1] - 1, parts[0]);
   }
   return new Date(dateStr);
@@ -31,7 +32,10 @@ function getPlannedDateTime(dateStr) {
   const m = String(now.getMinutes()).padStart(2, "0");
   const s = String(now.getSeconds()).padStart(2, "0");
   let fd = dateStr;
-  if (dateStr.includes("-")) { const p = dateStr.split("-"); if (p[0].length === 4) fd = `${p[2]}/${p[1]}/${p[0]}`; }
+  if (dateStr.includes("-")) {
+    const p = dateStr.split("-");
+    if (p[0].length === 4) fd = `${p[2]}/${p[1]}/${p[0]}`;
+  }
   return `${fd} ${h}:${m}:${s}`;
 }
 
@@ -60,7 +64,11 @@ function getShortTimestamp() {
 function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
-  const emailToDoerMap = { "bdm1@company.com": "BDM1", "bdm2@company.com": "BDM2" , "bdm6@company.com": "BDM6"};
+  const emailToDoerMap = {
+    "bdm1@company.com": "BDM1",
+    "bdm2@company.com": "BDM2",
+    "bdm6@company.com": "BDM6",
+  };
   return emailToDoerMap[user.email?.toLowerCase()] || null;
 }
 
@@ -83,7 +91,14 @@ async function buildAppendedRemarks(sheets, sheetName, cellRange, newRemark) {
   return timestamped;
 }
 
-async function appendToLogger(sheets, leadInfo, stepName, status, remarks, userEmail) {
+async function appendToLogger(
+  sheets,
+  leadInfo,
+  stepName,
+  status,
+  remarks,
+  userEmail,
+) {
   try {
     const timestamp = getCurrentTimestamp();
     await sheets.spreadsheets.values.append({
@@ -92,13 +107,34 @@ async function appendToLogger(sheets, leadInfo, stepName, status, remarks, userE
       valueInputOption: "USER_ENTERED",
       insertDataOption: "INSERT_ROWS",
       requestBody: {
-        values: [[timestamp, stepName, leadInfo.uniqueId || "", leadInfo.customerName || "", leadInfo.customerContact || "", leadInfo.interestedIn || "", leadInfo.projectSelection || "", status, remarks || "", userEmail || ""]],
+        values: [
+          [
+            timestamp,
+            stepName,
+            leadInfo.uniqueId || "",
+            leadInfo.customerName || "",
+            leadInfo.customerContact || "",
+            leadInfo.interestedIn || "",
+            leadInfo.projectSelection || "",
+            status,
+            remarks || "",
+            userEmail || "",
+          ],
+        ],
       },
     });
-  } catch (error) { console.error("❌ Logger append failed:", error.message); }
+  } catch (error) {
+    console.error("❌ Logger append failed:", error.message);
+  }
 }
 
-async function appendToNotInterestedSheet(sheets, leadInfo, stepName, reason, userEmail) {
+async function appendToNotInterestedSheet(
+  sheets,
+  leadInfo,
+  stepName,
+  reason,
+  userEmail,
+) {
   try {
     const timestamp = getCurrentTimestamp();
     await sheets.spreadsheets.values.append({
@@ -107,15 +143,34 @@ async function appendToNotInterestedSheet(sheets, leadInfo, stepName, reason, us
       valueInputOption: "USER_ENTERED",
       insertDataOption: "INSERT_ROWS",
       requestBody: {
-        values: [[timestamp, stepName, leadInfo.uniqueId || "", leadInfo.customerName || "", leadInfo.customerContact || "", leadInfo.interestedIn || "", leadInfo.projectSelection || "", leadInfo.leadSource || "", leadInfo.doer || "", reason || "", userEmail || ""]],
+        values: [
+          [
+            timestamp,
+            stepName,
+            leadInfo.uniqueId || "",
+            leadInfo.customerName || "",
+            leadInfo.customerContact || "",
+            leadInfo.interestedIn || "",
+            leadInfo.projectSelection || "",
+            leadInfo.leadSource || "",
+            leadInfo.doer || "",
+            reason || "",
+            userEmail || "",
+          ],
+        ],
       },
     });
-  } catch (error) { console.error("❌ Not Interested sheet append failed:", error.message); }
+  } catch (error) {
+    console.error("❌ Not Interested sheet append failed:", error.message);
+  }
 }
 
 async function getFilteredLeads(sheets, user) {
   try {
-    const response = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${NBD_SHEET_NAME}'!A8:AN` });
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${NBD_SHEET_NAME}'!A8:AN`,
+    });
     const rows = response.data.values || [];
     const filteredLeads = [];
     const doerTag = getDoerTag(user);
@@ -133,21 +188,39 @@ async function getFilteredLeads(sheets, user) {
       const countVal = parseInt(followUpCountStr) || 0;
       let finalRemarkToDisplay = countVal === 0 ? oldRemarkL : latestRemarkT;
 
-      if (status === "" || status === "No conversation" || status === "Next Follow Up") {
+      if (
+        status === "" ||
+        status === "No conversation" ||
+        status === "Next Follow Up"
+      ) {
         if (doerTag && doer !== doerTag) return;
         filteredLeads.push({
-          rowIndex: index + 8, sheetName: NBD_SHEET_NAME,
-          uniqueId: row[1] || "", customerName: row[2] || "", customerContact: row[3] || "",
-          interestedIn: row[4] || "", projectSelection: row[5] || "", leadSource: row[6] || "",
-          leadGenNumber: row[7] || "", leadGenName: row[8] || "",
-          importantNote, pickAndDrop, plannedDate, actualDate,
-          status: status || "Pending", followUpCount: countVal,
-          remarks: finalRemarkToDisplay, oldRemarks: oldRemarkL, doer,
+          rowIndex: index + 8,
+          sheetName: NBD_SHEET_NAME,
+          uniqueId: row[1] || "",
+          customerName: row[2] || "",
+          customerContact: row[3] || "",
+          interestedIn: row[4] || "",
+          projectSelection: row[5] || "",
+          leadSource: row[6] || "",
+          leadGenNumber: row[7] || "",
+          leadGenName: row[8] || "",
+          importantNote,
+          pickAndDrop,
+          plannedDate,
+          actualDate,
+          status: status || "Pending",
+          followUpCount: countVal,
+          remarks: finalRemarkToDisplay,
+          oldRemarks: oldRemarkL,
+          doer,
         });
       }
     });
     return filteredLeads;
-  } catch (error) { throw error; }
+  } catch (error) {
+    throw error;
+  }
 }
 
 router.get("/nbdin", async (req, res) => {
@@ -155,33 +228,91 @@ router.get("/nbdin", async (req, res) => {
     const leads = await getFilteredLeads(req.sheets, req.user);
     leads.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
     res.json({ success: true, data: leads, total: leads.length });
-  } catch (error) { res.status(500).json({ success: false, error: "Failed to fetch leads", message: error.message }); }
+  } catch (error) {
+    res
+      .status(500)
+      .json({
+        success: false,
+        error: "Failed to fetch leads",
+        message: error.message,
+      });
+  }
 });
 
 router.post("/nbdin/update", async (req, res) => {
   try {
-    const { rowIndex, status, fieldVisitDate, nextFollowUpDate, currentFollowUpCount, remarks, pickAndDrop, notInterestedReason, leadInfo } = req.body;
-    if (!rowIndex || !status) return res.status(400).json({ success: false, error: "Missing required fields" });
+    const {
+      rowIndex,
+      status,
+      fieldVisitDate,
+      nextFollowUpDate,
+      currentFollowUpCount,
+      remarks,
+      pickAndDrop,
+      notInterestedReason,
+      leadInfo,
+    } = req.body;
+    if (!rowIndex || !status)
+      return res
+        .status(400)
+        .json({ success: false, error: "Missing required fields" });
 
-    const timestamp = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }).replace(",", "");
+    const timestamp = new Date()
+      .toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })
+      .replace(",", "");
     const newFollowUpCount = (parseInt(currentFollowUpCount) || 0) + 1;
     const updates = [];
 
-    if ((status === "No conversation" || status === "Next Follow Up") && nextFollowUpDate) {
-      updates.push({ range: `'${NBD_SHEET_NAME}'!M${rowIndex}`, values: [[getPlannedDateTime(nextFollowUpDate)]] });
+    if (
+      (status === "No conversation" || status === "Next Follow Up") &&
+      nextFollowUpDate
+    ) {
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!M${rowIndex}`,
+        values: [[getPlannedDateTime(nextFollowUpDate)]],
+      });
     }
-    updates.push({ range: `'${NBD_SHEET_NAME}'!N${rowIndex}`, values: [[timestamp]] });
-    updates.push({ range: `'${NBD_SHEET_NAME}'!O${rowIndex}`, values: [[status]] });
-    if (fieldVisitDate) updates.push({ range: `'${NBD_SHEET_NAME}'!P${rowIndex}`, values: [[fieldVisitDate]] });
-    if (nextFollowUpDate) updates.push({ range: `'${NBD_SHEET_NAME}'!Q${rowIndex}`, values: [[nextFollowUpDate]] });
-    updates.push({ range: `'${NBD_SHEET_NAME}'!R${rowIndex}`, values: [[newFollowUpCount.toString()]] });
-    if (pickAndDrop) updates.push({ range: `'${NBD_SHEET_NAME}'!S${rowIndex}`, values: [[pickAndDrop]] });
+    updates.push({
+      range: `'${NBD_SHEET_NAME}'!N${rowIndex}`,
+      values: [[timestamp]],
+    });
+    updates.push({
+      range: `'${NBD_SHEET_NAME}'!O${rowIndex}`,
+      values: [[status]],
+    });
+    if (fieldVisitDate)
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!P${rowIndex}`,
+        values: [[fieldVisitDate]],
+      });
+    if (nextFollowUpDate)
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!Q${rowIndex}`,
+        values: [[nextFollowUpDate]],
+      });
+    updates.push({
+      range: `'${NBD_SHEET_NAME}'!R${rowIndex}`,
+      values: [[newFollowUpCount.toString()]],
+    });
+    if (pickAndDrop)
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!S${rowIndex}`,
+        values: [[pickAndDrop]],
+      });
 
     // ✅ Remarks — APPEND with timestamp (new on top of old)
     if (remarks && String(remarks).trim() !== "") {
-      const appendedRemarks = await buildAppendedRemarks(req.sheets, NBD_SHEET_NAME, `T${rowIndex}`, remarks);
+      const appendedRemarks = await buildAppendedRemarks(
+        req.sheets,
+        NBD_SHEET_NAME,
+        `T${rowIndex}`,
+        remarks,
+      );
       if (appendedRemarks) {
-        updates.push({ range: `'${NBD_SHEET_NAME}'!T${rowIndex}`, values: [[appendedRemarks]] });
+        updates.push({
+          range: `'${NBD_SHEET_NAME}'!T${rowIndex}`,
+          values: [[appendedRemarks]],
+        });
       }
     }
 
@@ -191,28 +322,70 @@ router.post("/nbdin/update", async (req, res) => {
     });
 
     // ✅ HAR status change pe Logger
-    if (leadInfo) await appendToLogger(req.sheets, leadInfo, "Step 1 - Follow Up", status, remarks || "", req.user?.email);
-    if (status === "Not Interested" && leadInfo) await appendToNotInterestedSheet(req.sheets, leadInfo, "Step 1 - Follow Up", notInterestedReason || "", req.user?.email);
+    if (leadInfo)
+      await appendToLogger(
+        req.sheets,
+        leadInfo,
+        "Step 1 - Follow Up",
+        status,
+        remarks || "",
+        req.user?.email,
+      );
+    if (status === "Not Interested" && leadInfo)
+      await appendToNotInterestedSheet(
+        req.sheets,
+        leadInfo,
+        "Step 1 - Follow Up",
+        notInterestedReason || "",
+        req.user?.email,
+      );
 
     res.json({ success: true, message: "NBD Lead updated successfully" });
-  } catch (error) { res.status(500).json({ success: false, error: error.message }); }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 router.post("/nbdin/assign", async (req, res) => {
   try {
     const { uniqueId, assignTo } = req.body;
-    if (!uniqueId || !assignTo) return res.status(400).json({ success: false, error: "Missing fields" });
-    if (!["BDM1", "BDM2"].includes(assignTo)) return res.status(400).json({ success: false, error: "Invalid assignTo" });
+    if (!uniqueId || !assignTo)
+      return res.status(400).json({ success: false, error: "Missing fields" });
+    if (!["BDM1", "BDM2"].includes(assignTo))
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid assignTo" });
 
-    const response = await req.sheets.spreadsheets.values.get({ spreadsheetId: LEAD_QUAL_SPREADSHEET_ID, range: `'${LEAD_QUAL_SHEET_NAME}'!A:V` });
+    const response = await req.sheets.spreadsheets.values.get({
+      spreadsheetId: LEAD_QUAL_SPREADSHEET_ID,
+      range: `'${LEAD_QUAL_SHEET_NAME}'!A:V`,
+    });
     const rows = response.data.values || [];
     let targetRowIndex = -1;
-    for (let i = 0; i < rows.length; i++) { if ((rows[i][1] || "").trim() === uniqueId) { targetRowIndex = i + 1; break; } }
-    if (targetRowIndex === -1) return res.status(404).json({ success: false, error: `Lead "${uniqueId}" not found` });
+    for (let i = 0; i < rows.length; i++) {
+      if ((rows[i][1] || "").trim() === uniqueId) {
+        targetRowIndex = i + 1;
+        break;
+      }
+    }
+    if (targetRowIndex === -1)
+      return res
+        .status(404)
+        .json({ success: false, error: `Lead "${uniqueId}" not found` });
 
-    await req.sheets.spreadsheets.values.update({ spreadsheetId: LEAD_QUAL_SPREADSHEET_ID, range: `'${LEAD_QUAL_SHEET_NAME}'!V${targetRowIndex}`, valueInputOption: "USER_ENTERED", requestBody: { values: [[assignTo]] } });
-    res.json({ success: true, message: `Lead ${uniqueId} assigned to ${assignTo}` });
-  } catch (error) { res.status(500).json({ success: false, error: error.message }); }
+    await req.sheets.spreadsheets.values.update({
+      spreadsheetId: LEAD_QUAL_SPREADSHEET_ID,
+      range: `'${LEAD_QUAL_SHEET_NAME}'!V${targetRowIndex}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[assignTo]] },
+    });
+    res.json({
+      success: true,
+      message: `Lead ${uniqueId} assigned to ${assignTo}`,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 module.exports = router;

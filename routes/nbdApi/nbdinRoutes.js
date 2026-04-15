@@ -351,7 +351,7 @@ router.post("/nbdin/assign", async (req, res) => {
     const { uniqueId, assignTo } = req.body;
     if (!uniqueId || !assignTo)
       return res.status(400).json({ success: false, error: "Missing fields" });
-    if (!["BDM1", "BDM2"].includes(assignTo))
+    if (!["BDM1", "BDM2", "BDM6"].includes(assignTo))
       return res
         .status(400)
         .json({ success: false, error: "Invalid assignTo" });

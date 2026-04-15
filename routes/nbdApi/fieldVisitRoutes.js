@@ -183,7 +183,10 @@ async function getFilteredLeads(sheets, user) {
       const followupCount = row[25] ? parseInt(row[25].trim(), 10) || 0 : 0;
       const doer = row[38] ? row[38].trim() : "";
       const fsrDoer = row[39] ? row[39].trim() : "";
+
+      // ✅ Only show empty status or "Rescheduled" — "Call Not Picked" automatically excluded
       const showRow = !status || status.trim().toLowerCase() === "rescheduled";
+
       if (showRow && plannedDate) {
         if (doerTag && doer !== doerTag) return;
         filteredLeads.push({
@@ -261,6 +264,7 @@ router.post("/update", async (req, res) => {
     });
 
     if (rescheduleDate && String(rescheduleDate).trim() !== "") {
+      // ✅ Reschedule
       updates.push({
         range: `'${NBD_SHEET_NAME}'!U${rowIndex}`,
         values: [[getPlannedDateTime(rescheduleDate)]],
@@ -270,6 +274,7 @@ router.post("/update", async (req, res) => {
         values: [["Rescheduled"]],
       });
     } else if (status === "Not Interested") {
+      // ✅ Not Interested
       updates.push({
         range: `'${NBD_SHEET_NAME}'!V${rowIndex}`,
         values: [[timestamp]],
@@ -286,7 +291,14 @@ router.post("/update", async (req, res) => {
           notInterestedReason || "",
           req.user?.email,
         );
+    } else if (status === "Call Not Picked") {
+      // ✅ CNP — sirf W column mein status, V (actual date) mat likho
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
+        values: [["Call Not Picked"]],
+      });
     } else {
+      // ✅ Done (or any other status)
       updates.push({
         range: `'${NBD_SHEET_NAME}'!V${rowIndex}`,
         values: [[timestamp]],
@@ -340,7 +352,9 @@ router.post("/update", async (req, res) => {
         ? "Rescheduled"
         : status === "Not Interested"
           ? "Marked Not Interested"
-          : "Field Visit Done",
+          : status === "Call Not Picked"
+            ? "Marked Call Not Picked"
+            : "Field Visit Done",
       newFollowupCount,
     });
   } catch (error) {

@@ -99,7 +99,7 @@ const cpMeetingRoutes = require("./routes/cp/cpMeetingRoutes");
 const cpBookingRoutes = require("./routes/cp/cpBookingRoutes");
 const cpLeadFormRoutes = require("./routes/cp/cpLeadFormRoutes");
 const cpContactUpdateRoutes = require("./routes/cp/cpContactUpdateRoutes");
-
+const cnpRoutes = require("./routes/nbdApi/cnpRoutes");
 const leadSearchRoutes = require("./routes/leadSearch");
 
 // ============================================
@@ -121,6 +121,7 @@ app.use("/api/cp/lead-form", cpLeadFormRoutes);
 
 app.use("/cp", cpContactUpdateRoutes);
 app.use("/api/leads", protect, leadSearchRoutes);
+app.use("/api/cnp", protect, cnpRoutes);
 
 // ============================================
 // Health Check

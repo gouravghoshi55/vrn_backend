@@ -43,6 +43,46 @@ function getPlannedDateTime(dateStr) {
   return `${fd} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
 }
 
+// ✅ NEW: Add N days to a sheet date string (DD/MM/YYYY HH:MM:SS) and return same format
+function addDaysToSheetDate(sheetDateStr, days) {
+  let baseDate;
+  if (!sheetDateStr || !String(sheetDateStr).trim()) {
+    // If no existing planned date, use today
+    baseDate = new Date();
+  } else {
+    const str = String(sheetDateStr).trim();
+    // Format: DD/MM/YYYY HH:MM:SS  OR  DD/MM/YYYY
+    const parts = str.split(" ");
+    const datePart = parts[0];
+    const timePart = parts[1] || "10:00:00";
+    const dp = datePart.split("/");
+    if (dp.length !== 3) {
+      baseDate = new Date();
+    } else {
+      const [d, m, y] = dp;
+      const [hh = "10", mm = "00", ss = "00"] = timePart.split(":");
+      baseDate = new Date(
+        parseInt(y, 10),
+        parseInt(m, 10) - 1,
+        parseInt(d, 10),
+        parseInt(hh, 10),
+        parseInt(mm, 10),
+        parseInt(ss, 10),
+      );
+      if (isNaN(baseDate.getTime())) baseDate = new Date();
+    }
+  }
+  baseDate.setDate(baseDate.getDate() + days);
+
+  const dd = String(baseDate.getDate()).padStart(2, "0");
+  const mo = String(baseDate.getMonth() + 1).padStart(2, "0");
+  const yy = baseDate.getFullYear();
+  const hh = String(baseDate.getHours()).padStart(2, "0");
+  const mi = String(baseDate.getMinutes()).padStart(2, "0");
+  const ss = String(baseDate.getSeconds()).padStart(2, "0");
+  return `${dd}/${mo}/${yy} ${hh}:${mi}:${ss}`;
+}
+
 function parseDate(dateStr) {
   if (!dateStr) return new Date(0);
   const p = dateStr.split(/[/-]/);
@@ -292,7 +332,23 @@ router.post("/update", async (req, res) => {
           req.user?.email,
         );
     } else if (status === "Call Not Picked") {
-      // ✅ CNP — sirf W column mein status, V (actual date) mat likho
+      // ✅ CNP — auto +7 days to planned date (Column U)
+      // Fetch existing planned date from Column U
+      let existingPlannedDate = "";
+      try {
+        const pd = await req.sheets.spreadsheets.values.get({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `'${NBD_SHEET_NAME}'!U${rowIndex}`,
+        });
+        existingPlannedDate = pd.data.values?.[0]?.[0] || "";
+      } catch (e) {}
+
+      const newPlannedDate = addDaysToSheetDate(existingPlannedDate, 7);
+
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!U${rowIndex}`,
+        values: [[newPlannedDate]],
+      });
       updates.push({
         range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
         values: [["Call Not Picked"]],
@@ -353,7 +409,7 @@ router.post("/update", async (req, res) => {
         : status === "Not Interested"
           ? "Marked Not Interested"
           : status === "Call Not Picked"
-            ? "Marked Call Not Picked"
+            ? "Marked Call Not Picked — Planned date moved +7 days"
             : "Field Visit Done",
       newFollowupCount,
     });

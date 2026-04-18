@@ -7,23 +7,23 @@ const LOGGER_SHEET_NAME = "Logger";
 const NOT_INTERESTED_SHEET = "Not Interested Reasons";
 
 function getCurrentTimestamp() {
-  const now = new Date();
-  const d = String(now.getDate()).padStart(2, "0"),
-    mo = String(now.getMonth() + 1).padStart(2, "0"),
-    y = now.getFullYear();
-  const h = String(now.getHours()).padStart(2, "0"),
-    mi = String(now.getMinutes()).padStart(2, "0"),
-    s = String(now.getSeconds()).padStart(2, "0");
+  const now = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
+  const d = String(now.getUTCDate()).padStart(2, "0"),
+    mo = String(now.getUTCMonth() + 1).padStart(2, "0"),
+    y = now.getUTCFullYear();
+  const h = String(now.getUTCHours()).padStart(2, "0"),
+    mi = String(now.getUTCMinutes()).padStart(2, "0"),
+    s = String(now.getUTCSeconds()).padStart(2, "0");
   return `${d}/${mo}/${y} ${h}:${mi}:${s}`;
 }
 
 function getShortTimestamp() {
-  const now = new Date();
-  const d = String(now.getDate()).padStart(2, "0"),
-    mo = String(now.getMonth() + 1).padStart(2, "0"),
-    y = now.getFullYear();
-  const h = String(now.getHours()).padStart(2, "0"),
-    mi = String(now.getMinutes()).padStart(2, "0");
+  const now = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
+  const d = String(now.getUTCDate()).padStart(2, "0"),
+    mo = String(now.getUTCMonth() + 1).padStart(2, "0"),
+    y = now.getUTCFullYear();
+  const h = String(now.getUTCHours()).padStart(2, "0"),
+    mi = String(now.getUTCMinutes()).padStart(2, "0");
   return `[${d}/${mo}/${y} ${h}:${mi}]`;
 }
 
@@ -43,21 +43,18 @@ function getPlannedDateTime(dateStr) {
   return `${fd} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
 }
 
-// ✅ NEW: Add N days to a sheet date string (DD/MM/YYYY HH:MM:SS) and return same format
 function addDaysToSheetDate(sheetDateStr, days) {
   let baseDate;
   if (!sheetDateStr || !String(sheetDateStr).trim()) {
-    // If no existing planned date, use today
-    baseDate = new Date();
+    baseDate = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
   } else {
     const str = String(sheetDateStr).trim();
-    // Format: DD/MM/YYYY HH:MM:SS  OR  DD/MM/YYYY
     const parts = str.split(" ");
     const datePart = parts[0];
     const timePart = parts[1] || "10:00:00";
     const dp = datePart.split("/");
     if (dp.length !== 3) {
-      baseDate = new Date();
+      baseDate = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
     } else {
       const [d, m, y] = dp;
       const [hh = "10", mm = "00", ss = "00"] = timePart.split(":");
@@ -69,7 +66,8 @@ function addDaysToSheetDate(sheetDateStr, days) {
         parseInt(mm, 10),
         parseInt(ss, 10),
       );
-      if (isNaN(baseDate.getTime())) baseDate = new Date();
+      if (isNaN(baseDate.getTime()))
+        baseDate = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
     }
   }
   baseDate.setDate(baseDate.getDate() + days);

@@ -80,7 +80,14 @@ async function buildAppendedRemarks(sheets, sheetName, cellRange, newRemark) {
   return existing.trim() ? `${existing.trim()}\n${timestamped}` : timestamped;
 }
 
-async function appendToLogger(sheets, leadInfo, stepName, status, remarks, userEmail) {
+async function appendToLogger(
+  sheets,
+  leadInfo,
+  stepName,
+  status,
+  remarks,
+  userEmail,
+) {
   try {
     const ts = getCurrentTimestamp();
     await sheets.spreadsheets.values.append({
@@ -91,9 +98,16 @@ async function appendToLogger(sheets, leadInfo, stepName, status, remarks, userE
       requestBody: {
         values: [
           [
-            ts, stepName, leadInfo.uniqueId || "", leadInfo.customerName || "",
-            leadInfo.customerContact || "", leadInfo.interestedIn || "",
-            leadInfo.projectSelection || "", status, remarks || "", userEmail || "",
+            ts,
+            stepName,
+            leadInfo.uniqueId || "",
+            leadInfo.customerName || "",
+            leadInfo.customerContact || "",
+            leadInfo.interestedIn || "",
+            leadInfo.projectSelection || "",
+            status,
+            remarks || "",
+            userEmail || "",
           ],
         ],
       },
@@ -103,7 +117,13 @@ async function appendToLogger(sheets, leadInfo, stepName, status, remarks, userE
   }
 }
 
-async function appendToNotInterestedSheet(sheets, leadInfo, stepName, reason, userEmail) {
+async function appendToNotInterestedSheet(
+  sheets,
+  leadInfo,
+  stepName,
+  reason,
+  userEmail,
+) {
   try {
     const ts = getCurrentTimestamp();
     await sheets.spreadsheets.values.append({
@@ -114,10 +134,17 @@ async function appendToNotInterestedSheet(sheets, leadInfo, stepName, reason, us
       requestBody: {
         values: [
           [
-            ts, stepName, leadInfo.uniqueId || "", leadInfo.customerName || "",
-            leadInfo.customerContact || "", leadInfo.interestedIn || "",
-            leadInfo.projectSelection || "", leadInfo.leadSource || "",
-            leadInfo.doer || "", reason || "", userEmail || "",
+            ts,
+            stepName,
+            leadInfo.uniqueId || "",
+            leadInfo.customerName || "",
+            leadInfo.customerContact || "",
+            leadInfo.interestedIn || "",
+            leadInfo.projectSelection || "",
+            leadInfo.leadSource || "",
+            leadInfo.doer || "",
+            reason || "",
+            userEmail || "",
           ],
         ],
       },
@@ -161,7 +188,10 @@ router.get("/list", async (req, res) => {
         plannedDate: row[20] ? row[20].trim() : "",
         status,
         followupCount: row[25] ? parseInt(row[25].trim(), 10) || 0 : 0,
-        remarks: (row[24] ? row[24].trim() : "") || (row[19] ? row[19].trim() : "") || (row[11] ? row[11].trim() : ""),
+        remarks:
+          (row[24] ? row[24].trim() : "") ||
+          (row[19] ? row[19].trim() : "") ||
+          (row[11] ? row[11].trim() : ""),
         oldRemarks: row[11] ? row[11].trim() : "",
         previousRemarks: row[19] ? row[19].trim() : "",
         doer,
@@ -171,7 +201,9 @@ router.get("/list", async (req, res) => {
     leads.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
     res.json({ success: true, data: leads, total: leads.length });
   } catch (error) {
-    res.status(500).json({ success: false, error: "Failed", message: error.message });
+    res
+      .status(500)
+      .json({ success: false, error: "Failed", message: error.message });
   }
 });
 
@@ -180,10 +212,20 @@ router.get("/list", async (req, res) => {
 // ============================================
 router.post("/update", async (req, res) => {
   try {
-    const { rowIndex, action, fieldVisitDate, nextFollowUpDate, remarks, notInterestedReason, leadInfo } = req.body;
+    const {
+      rowIndex,
+      action,
+      fieldVisitDate,
+      nextFollowUpDate,
+      remarks,
+      notInterestedReason,
+      leadInfo,
+    } = req.body;
 
     if (!rowIndex || !action) {
-      return res.status(400).json({ success: false, error: "Missing rowIndex or action" });
+      return res
+        .status(400)
+        .json({ success: false, error: "Missing rowIndex or action" });
     }
 
     const updates = [];
@@ -199,7 +241,10 @@ router.post("/update", async (req, res) => {
       currentFollowupCount = parseInt(cr.data.values?.[0]?.[0]) || 0;
     } catch (e) {}
     const newFollowupCount = currentFollowupCount + 1;
-    updates.push({ range: `'${NBD_SHEET_NAME}'!Z${rowIndex}`, values: [[newFollowupCount]] });
+    updates.push({
+      range: `'${NBD_SHEET_NAME}'!Z${rowIndex}`,
+      values: [[newFollowupCount]],
+    });
 
     let logStep = "CNP";
     let logStatus = "";
@@ -208,47 +253,119 @@ router.post("/update", async (req, res) => {
     if (action === "schedule") {
       // Schedule Site Visit — lead goes back to Field Visit
       if (!fieldVisitDate) {
-        return res.status(400).json({ success: false, error: "fieldVisitDate required for schedule action" });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error: "fieldVisitDate required for schedule action",
+          });
       }
-      updates.push({ range: `'${NBD_SHEET_NAME}'!U${rowIndex}`, values: [[getPlannedDateTime(fieldVisitDate)]] });
-      updates.push({ range: `'${NBD_SHEET_NAME}'!W${rowIndex}`, values: [["Rescheduled"]] });
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!U${rowIndex}`,
+        values: [[getPlannedDateTime(fieldVisitDate)]],
+      });
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
+        values: [["Rescheduled"]],
+      });
       logStep = "CNP - Schedule Site Visit";
       logStatus = "Rescheduled";
       responseMessage = "Site Visit scheduled — lead moved to Field Visit";
-
     } else if (action === "not-interested") {
       // Not Interested — close lead
       if (!notInterestedReason || !String(notInterestedReason).trim()) {
-        return res.status(400).json({ success: false, error: "Reason required for Not Interested" });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error: "Reason required for Not Interested",
+          });
       }
-      updates.push({ range: `'${NBD_SHEET_NAME}'!V${rowIndex}`, values: [[timestamp]] });
-      updates.push({ range: `'${NBD_SHEET_NAME}'!W${rowIndex}`, values: [["Not Interested"]] });
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!V${rowIndex}`,
+        values: [[timestamp]],
+      });
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
+        values: [["Not Interested"]],
+      });
       if (leadInfo) {
-        await appendToNotInterestedSheet(req.sheets, leadInfo, "CNP - Not Interested", notInterestedReason, req.user?.email);
+        await appendToNotInterestedSheet(
+          req.sheets,
+          leadInfo,
+          "CNP - Not Interested",
+          notInterestedReason,
+          req.user?.email,
+        );
       }
       logStep = "CNP - Not Interested";
       logStatus = "Not Interested";
       responseMessage = "Lead marked Not Interested";
-
     } else if (action === "cnp-again") {
       // CNP again — stay in CNP with new planned date
       if (!nextFollowUpDate) {
-        return res.status(400).json({ success: false, error: "nextFollowUpDate required for cnp-again action" });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error: "nextFollowUpDate required for cnp-again action",
+          });
       }
-      updates.push({ range: `'${NBD_SHEET_NAME}'!U${rowIndex}`, values: [[getPlannedDateTime(nextFollowUpDate)]] });
-      updates.push({ range: `'${NBD_SHEET_NAME}'!W${rowIndex}`, values: [["Call Not Picked"]] });
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!U${rowIndex}`,
+        values: [[getPlannedDateTime(nextFollowUpDate)]],
+      });
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
+        values: [["Call Not Picked"]],
+      });
       logStep = "CNP - Call Not Picked";
       logStatus = "Call Not Picked";
       responseMessage = "Lead updated — next follow-up scheduled";
-
+    } else if (action === "next-followup") {
+      // Next Follow Up — stay in CNP with new planned date (Option B)
+      if (!nextFollowUpDate) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error: "nextFollowUpDate required for next-followup action",
+          });
+      }
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!U${rowIndex}`,
+        values: [[getPlannedDateTime(nextFollowUpDate)]],
+      });
+      updates.push({
+        range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
+        values: [["Call Not Picked"]],
+      });
+      logStep = "CNP - Next Follow Up";
+      logStatus = "Call Not Picked";
+      responseMessage = "Next follow-up scheduled — lead stays in CNP";
     } else {
-      return res.status(400).json({ success: false, error: "Invalid action. Use: schedule, not-interested, cnp-again" });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          error:
+            "Invalid action. Use: schedule, not-interested, cnp-again, next-followup",
+        });
     }
 
     // Append remarks
     if (remarks && String(remarks).trim() !== "") {
-      const appended = await buildAppendedRemarks(req.sheets, NBD_SHEET_NAME, `Y${rowIndex}`, remarks);
-      if (appended) updates.push({ range: `'${NBD_SHEET_NAME}'!Y${rowIndex}`, values: [[appended]] });
+      const appended = await buildAppendedRemarks(
+        req.sheets,
+        NBD_SHEET_NAME,
+        `Y${rowIndex}`,
+        remarks,
+      );
+      if (appended)
+        updates.push({
+          range: `'${NBD_SHEET_NAME}'!Y${rowIndex}`,
+          values: [[appended]],
+        });
     }
 
     // Batch update
@@ -259,7 +376,14 @@ router.post("/update", async (req, res) => {
 
     // Logger
     if (leadInfo) {
-      await appendToLogger(req.sheets, leadInfo, logStep, logStatus, remarks || "", req.user?.email);
+      await appendToLogger(
+        req.sheets,
+        leadInfo,
+        logStep,
+        logStatus,
+        remarks || "",
+        req.user?.email,
+      );
     }
 
     res.json({ success: true, message: responseMessage, newFollowupCount });

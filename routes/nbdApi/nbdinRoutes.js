@@ -180,7 +180,8 @@ async function getFilteredLeads(sheets, user) {
     rows.forEach((row, index) => {
       const importantNote = row[10] ? row[10].trim() : "";
       const status = row[14] ? row[14].trim() : "";
-      const plannedDate = row[12] ? row[12].trim() : "";
+      // ✅ Planned Date: Q column (16) primary, M column (12) fallback
+      const plannedDate = (row[16] ? row[16].trim() : "") || (row[12] ? row[12].trim() : "");
       const actualDate = row[13] ? row[13].trim() : "";
       const followUpCountStr = row[17] ? row[17].trim() : "0";
       const pickAndDrop = row[18] ? row[18].trim() : "No";
@@ -269,8 +270,9 @@ router.post("/nbdin/update", async (req, res) => {
       (status === "No conversation" || status === "Next Follow Up") &&
       nextFollowUpDate
     ) {
+      // ✅ Write to Q column (index 16) only — M column not touched (REF error)
       updates.push({
-        range: `'${NBD_SHEET_NAME}'!M${rowIndex}`,
+        range: `'${NBD_SHEET_NAME}'!Q${rowIndex}`,
         values: [[getPlannedDateTime(nextFollowUpDate)]],
       });
     }
@@ -287,11 +289,7 @@ router.post("/nbdin/update", async (req, res) => {
         range: `'${NBD_SHEET_NAME}'!P${rowIndex}`,
         values: [[fieldVisitDate]],
       });
-    if (nextFollowUpDate)
-      updates.push({
-        range: `'${NBD_SHEET_NAME}'!Q${rowIndex}`,
-        values: [[nextFollowUpDate]],
-      });
+    // ✅ Removed duplicate Q write — already handled above
     updates.push({
       range: `'${NBD_SHEET_NAME}'!R${rowIndex}`,
       values: [[newFollowUpCount.toString()]],

@@ -40,6 +40,7 @@ function formatDateToSheetStyle(dateInput) {
   return `${d}/${m}/${y} ${h}:${mi}:${s}`;
 }
 
+// ✅ NBD Doer tag — Varun Sir and Mohan Sir added
 function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
@@ -48,14 +49,25 @@ function getDoerTag(user) {
     "bdm1@company.com": "BDM1",
     "bdm2@company.com": "BDM2",
     "bdm3@company.com": "BDM3",
+    "bdm6@company.com": "BDM6",
+    "varun@company.com": "Varun Sir",
+    "mohan@company.com": "Mohan Sir",
   };
   return m[user.email?.toLowerCase()] || null;
 }
+
+// ✅ FSR Doer tag — unchanged
 function getFSRDoerTag(user) {
   if (!user) return null;
   if (user.assignedModule !== "fsr") return null;
   const m = { "bdm4@company.com": "BDM4", "bdm5@company.com": "BDM5" };
   return m[user.email?.toLowerCase()] || null;
+}
+
+// ✅ Check if user is Varun Sir (full lifecycle — sees his own leads in After Field Visit)
+function isVarunSir(user) {
+  if (!user) return false;
+  return user.email?.toLowerCase() === "varun@company.com";
 }
 
 async function buildAppendedRemarks(sheets, sheetName, cellRange, newRemark) {
@@ -155,6 +167,7 @@ async function getFilteredLeads(sheets, user) {
     const rows = response.data.values || [];
     const doerTag = getDoerTag(user),
       fsrDoerTag = getFSRDoerTag(user);
+    const varunUser = isVarunSir(user);
 
     return rows
       .map((row, index) => {
@@ -170,8 +183,24 @@ async function getFilteredLeads(sheets, user) {
           status === "Next Follow Up" ||
           status === "Next Field Visit Required";
         if (!showRow) return null;
-        if (doerTag && doer !== doerTag) return null;
-        if (fsrDoerTag && fsrDoer !== fsrDoerTag) return null;
+
+        // ✅ Filtering logic:
+        // - Admin: sees all
+        // - FSR (BDM4/BDM5): sees leads where AN = their FSR code
+        // - Varun Sir: sees leads where AN = "Varun Sir" (he did field visit himself)
+        // - Normal NBD BDM (BDM1/BDM2/BDM6/Mohan Sir): does NOT see this step (FSR handles)
+        if (varunUser) {
+          // Varun Sir only sees leads he handled in field visit (AN = "Varun Sir")
+          if (fsrDoer !== "Varun Sir") return null;
+        } else if (fsrDoerTag) {
+          // FSR users filter by AN column
+          if (fsrDoer !== fsrDoerTag) return null;
+        } else if (doerTag) {
+          // Normal NBD BDMs — they don't handle after field visit, skip
+          // (Mohan Sir falls here — FSR handles his leads after field visit)
+          return null;
+        }
+        // Admin (doerTag=null, fsrDoerTag=null, varunUser=false) sees all
 
         const oldRemarks = g(11),
           previousRemarksDate = g(13),

@@ -53,6 +53,7 @@ function parseDate(dateStr) {
   return new Date(dateStr);
 }
 
+// ✅ Varun Sir and Mohan Sir added
 function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
@@ -62,6 +63,8 @@ function getDoerTag(user) {
     "bdm2@company.com": "BDM2",
     "bdm3@company.com": "BDM3",
     "bdm6@company.com": "BDM6",
+    "varun@company.com": "Varun Sir",
+    "mohan@company.com": "Mohan Sir",
   };
   return m[user.email?.toLowerCase()] || null;
 }
@@ -251,7 +254,6 @@ router.post("/update", async (req, res) => {
     let responseMessage = "";
 
     if (action === "schedule") {
-      // Schedule Site Visit — lead goes back to Field Visit
       if (!fieldVisitDate) {
         return res
           .status(400)
@@ -272,7 +274,6 @@ router.post("/update", async (req, res) => {
       logStatus = "Rescheduled";
       responseMessage = "Site Visit scheduled — lead moved to Field Visit";
     } else if (action === "not-interested") {
-      // Not Interested — close lead
       if (!notInterestedReason || !String(notInterestedReason).trim()) {
         return res
           .status(400)
@@ -302,7 +303,6 @@ router.post("/update", async (req, res) => {
       logStatus = "Not Interested";
       responseMessage = "Lead marked Not Interested";
     } else if (action === "cnp-again") {
-      // CNP again — stay in CNP with new planned date
       if (!nextFollowUpDate) {
         return res
           .status(400)
@@ -323,7 +323,6 @@ router.post("/update", async (req, res) => {
       logStatus = "Call Not Picked";
       responseMessage = "Lead updated — next follow-up scheduled";
     } else if (action === "next-followup") {
-      // Next Follow Up — stay in CNP with new planned date (Option B)
       if (!nextFollowUpDate) {
         return res
           .status(400)

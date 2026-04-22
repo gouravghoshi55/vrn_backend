@@ -44,6 +44,11 @@ router.post("/login", async (req, res) => {
 
     // Get users from sheet
     const users = await getUsers(req.sheets);
+    console.log("Total users found:", users.length);
+    console.log(
+      "All emails:",
+      users.map((u) => u.email),
+    );
 
     // Find user
     const user = users.find((u) => u.email === email.toLowerCase().trim());
@@ -82,7 +87,7 @@ router.post("/login", async (req, res) => {
         name: user.name,
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE || "7d" }
+      { expiresIn: process.env.JWT_EXPIRE || "7d" },
     );
 
     console.log("✅ Login successful:", user.email);

@@ -52,6 +52,8 @@ function parseDate(dateStr) {
   }
   return new Date(dateStr);
 }
+
+// ✅ NBD Doer tag — Varun Sir and Mohan Sir added
 function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
@@ -60,14 +62,25 @@ function getDoerTag(user) {
     "bdm1@company.com": "BDM1",
     "bdm2@company.com": "BDM2",
     "bdm3@company.com": "BDM3",
+    "bdm6@company.com": "BDM6",
+    "varun@company.com": "Varun Sir",
+    "mohan@company.com": "Mohan Sir",
   };
   return m[user.email?.toLowerCase()] || null;
 }
+
+// ✅ FSR Doer tag — unchanged
 function getFSRDoerTag(user) {
   if (!user) return null;
   if (user.assignedModule !== "fsr") return null;
   const m = { "bdm4@company.com": "BDM4", "bdm5@company.com": "BDM5" };
   return m[user.email?.toLowerCase()] || null;
+}
+
+// ✅ Check if user is Varun Sir (full lifecycle)
+function isVarunSir(user) {
+  if (!user) return false;
+  return user.email?.toLowerCase() === "varun@company.com";
 }
 
 async function buildAppendedRemarks(sheets, sheetName, cellRange, newRemark) {
@@ -167,6 +180,7 @@ async function getFilteredLeads(sheets, user) {
   const filtered = [];
   const doerTag = getDoerTag(user),
     fsrDoerTag = getFSRDoerTag(user);
+  const varunUser = isVarunSir(user);
 
   rows.forEach((row, index) => {
     const plannedDate = row[33] ? row[33].trim() : "";
@@ -194,8 +208,22 @@ async function getFilteredLeads(sheets, user) {
         status.toLowerCase() === "rescheduled" ||
         status.toLowerCase() === "next field visit required");
     if (!showRow) return;
-    if (doerTag && doer !== doerTag) return;
-    if (fsrDoerTag && fsrDoer !== fsrDoerTag) return;
+
+    // ✅ Filtering logic — same as After Field Visit:
+    // - Admin: sees all
+    // - FSR (BDM4/BDM5): sees leads where AN = their FSR code
+    // - Varun Sir: sees leads where AN = "Varun Sir"
+    // - Normal NBD BDM (BDM1/BDM2/BDM6/Mohan Sir): does NOT see this step
+    if (varunUser) {
+      if (fsrDoer !== "Varun Sir") return;
+    } else if (fsrDoerTag) {
+      if (fsrDoer !== fsrDoerTag) return;
+    } else if (doerTag) {
+      // Normal NBD BDMs — they don't handle meeting, skip
+      return;
+    }
+    // Admin sees all
+
     if (!status.trim()) status = "Pending";
 
     filtered.push({

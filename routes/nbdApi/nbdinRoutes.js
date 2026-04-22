@@ -68,6 +68,8 @@ function getDoerTag(user) {
     "bdm1@company.com": "BDM1",
     "bdm2@company.com": "BDM2",
     "bdm6@company.com": "BDM6",
+    "varun@company.com": "Varun Sir",
+    "mohan@company.com": "Mohan Sir",
   };
   return emailToDoerMap[user.email?.toLowerCase()] || null;
 }
@@ -351,7 +353,8 @@ router.post("/nbdin/assign", async (req, res) => {
     const { uniqueId, assignTo } = req.body;
     if (!uniqueId || !assignTo)
       return res.status(400).json({ success: false, error: "Missing fields" });
-    if (!["BDM1", "BDM2", "BDM6"].includes(assignTo))
+    // ✅ Varun Sir and Mohan Sir added to allowed list
+    if (!["BDM1", "BDM2", "BDM6", "Varun Sir", "Mohan Sir"].includes(assignTo))
       return res
         .status(400)
         .json({ success: false, error: "Invalid assignTo" });

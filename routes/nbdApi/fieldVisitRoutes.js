@@ -91,15 +91,18 @@ function parseDate(dateStr) {
   return new Date(dateStr);
 }
 
+// ✅ FSR code mapping — Varun Sir added (he handles his own field visits)
 function getFSRCode(user) {
   if (!user) return null;
   const m = {
     "bdm4@company.com": "BDM4",
     "bdm5@company.com": "BDM5",
-    "bdm6@company.com": "BDM6",
+    "varun@company.com": "Varun Sir",
   };
   return m[user.email?.toLowerCase()] || null;
 }
+
+// ✅ Doer tag for NBD filtering — Varun Sir and Mohan Sir added
 function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
@@ -108,6 +111,9 @@ function getDoerTag(user) {
     "bdm1@company.com": "BDM1",
     "bdm2@company.com": "BDM2",
     "bdm3@company.com": "BDM3",
+    "bdm6@company.com": "BDM6",
+    "varun@company.com": "Varun Sir",
+    "mohan@company.com": "Mohan Sir",
   };
   return m[user.email?.toLowerCase()] || null;
 }
@@ -331,7 +337,6 @@ router.post("/update", async (req, res) => {
         );
     } else if (status === "Call Not Picked") {
       // ✅ CNP — auto +7 days to planned date (Column U)
-      // Fetch existing planned date from Column U
       let existingPlannedDate = "";
       try {
         const pd = await req.sheets.spreadsheets.values.get({
@@ -361,13 +366,17 @@ router.post("/update", async (req, res) => {
         range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
         values: [[status || "Done"]],
       });
-      if (req.user && req.user.assignedModule === "fsr") {
-        const fc = getFSRCode(req.user);
-        if (fc)
+
+      // ✅ FSR users write their code to AN column on "Done"
+      // ✅ Varun Sir also writes his code to AN column (he handles full lifecycle)
+      if (req.user) {
+        const fsrCode = getFSRCode(req.user);
+        if (fsrCode) {
           updates.push({
             range: `'${NBD_SHEET_NAME}'!AN${rowIndex}`,
-            values: [[fc]],
+            values: [[fsrCode]],
           });
+        }
       }
     }
 

@@ -101,6 +101,7 @@ const cpLeadFormRoutes = require("./routes/cp/cpLeadFormRoutes");
 const cpContactUpdateRoutes = require("./routes/cp/cpContactUpdateRoutes");
 const cnpRoutes = require("./routes/nbdApi/cnpRoutes");
 const leadSearchRoutes = require("./routes/leadSearch");
+const callToBrokerRoutes = require("./routes/cp/callToBrokerRoutes");
 
 // ============================================
 // Use Routes
@@ -122,7 +123,7 @@ app.use("/api/cp/lead-form", cpLeadFormRoutes);
 app.use("/cp", cpContactUpdateRoutes);
 app.use("/api/leads", protect, leadSearchRoutes);
 app.use("/api/cnp", protect, cnpRoutes);
-
+app.use("/api/call-to-broker", protect, callToBrokerRoutes);
 // ============================================
 // Health Check
 // ============================================

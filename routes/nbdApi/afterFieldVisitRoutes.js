@@ -52,6 +52,7 @@ function getDoerTag(user) {
     "bdm6@company.com": "BDM6",
     "varun@company.com": "Varun Sir",
     "mohan@company.com": "Mohan Sir",
+     "bdm7@company.com": "BDM7",
   };
   return m[user.email?.toLowerCase()] || null;
 }
@@ -60,7 +61,7 @@ function getDoerTag(user) {
 function getFSRDoerTag(user) {
   if (!user) return null;
   if (user.assignedModule !== "fsr") return null;
-  const m = { "bdm4@company.com": "BDM4", "bdm5@company.com": "BDM5" };
+  const m = { "bdm4@company.com": "BDM4", "bdm5@company.com": "BDM5" ,  "bdm7@company.com": "BDM7" };
   return m[user.email?.toLowerCase()] || null;
 }
 

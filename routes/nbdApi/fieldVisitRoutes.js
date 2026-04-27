@@ -98,6 +98,7 @@ function getFSRCode(user) {
     "bdm4@company.com": "BDM4",
     "bdm5@company.com": "BDM5",
     "varun@company.com": "Varun Sir",
+     "bdm7@company.com": "BDM7",
   };
   return m[user.email?.toLowerCase()] || null;
 }

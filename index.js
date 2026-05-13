@@ -102,6 +102,9 @@ const cpContactUpdateRoutes = require("./routes/cp/cpContactUpdateRoutes");
 const cnpRoutes = require("./routes/nbdApi/cnpRoutes");
 const leadSearchRoutes = require("./routes/leadSearch");
 const callToBrokerRoutes = require("./routes/cp/callToBrokerRoutes");
+const fullKittingRoutes  = require("./routes/meetings/fullKittingRoutes");
+const meetingsSubRoutes  = require("./routes/meetings/meetingsSubRoutes");
+const agreementRoutes    = require("./routes/meetings/agreementRoutes");
 
 // ============================================
 // Use Routes
@@ -124,6 +127,9 @@ app.use("/cp", cpContactUpdateRoutes);
 app.use("/api/leads", protect, leadSearchRoutes);
 app.use("/api/cnp", protect, cnpRoutes);
 app.use("/api/call-to-broker", protect, callToBrokerRoutes);
+app.use("/api/meetings/full-kitting", fullKittingRoutes);
+app.use("/api/meetings/meetings-sub", meetingsSubRoutes);
+app.use("/api/meetings/agreement",    agreementRoutes);
 // ============================================
 // Health Check
 // ============================================

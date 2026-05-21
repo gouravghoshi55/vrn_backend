@@ -29,6 +29,7 @@ exports.getAgreementData = async (req, res) => {
           firmName: row[2] || "",
           contact:  row[3] || "",
           locality: row[4] || "",
+          plannedDate: planned, 
         });
       }
     });

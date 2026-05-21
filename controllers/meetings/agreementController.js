@@ -6,20 +6,20 @@ const SPREADSHEET_ID = "1iGI-DvLlBPj5mmwgOCs926xtaYVgTtoYcD8h2qhhhQc";
 const SHEET_NAME = "FMS";
 const DATA_START_ROW = 8;
 
-// GET — Show rows where W (Planned) NOT NULL & X (Actual) IS NULL
+// GET — Show rows where P (Planned) NOT NULL & Q (Actual) IS NULL
 exports.getAgreementData = async (req, res) => {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A${DATA_START_ROW}:AD`,
+      range: `${SHEET_NAME}!A${DATA_START_ROW}:V`,
     });
 
     const rows = response.data.values || [];
     const filtered = [];
 
     rows.forEach((row, idx) => {
-      const planned = row[22]; // W
-      const actual  = row[23]; // X
+      const planned = row[15]; // P
+      const actual  = row[16]; // Q
 
       if (planned && planned.toString().trim() !== "" &&
           (!actual || actual.toString().trim() === "")) {
@@ -57,10 +57,10 @@ exports.submitAgreementAction = async (req, res) => {
 
     const actualValue = status === "Done" ? getCurrentTimestamp() : "";
 
-    // Update X(Actual), Y(Status), Z(Deals In), AA(Contact), AB(PDF), AC(Remark)
+    // Update Q(Actual), R(Status), S(Deals In), T(Contact), U(PDF), V(Remark)
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!X${rowNumber}:AC${rowNumber}`,
+      range: `${SHEET_NAME}!Q${rowNumber}:V${rowNumber}`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [[

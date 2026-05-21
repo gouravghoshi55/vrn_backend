@@ -5,23 +5,23 @@ const SPREADSHEET_ID = "1iGI-DvLlBPj5mmwgOCs926xtaYVgTtoYcD8h2qhhhQc";
 const SHEET_NAME = "FMS";
 const DATA_START_ROW = 8;
 
-// GET — Show rows where Planned(O) NOT NULL & Actual(P) IS NULL
+// GET — Show rows where Planned(H) NOT NULL & Actual(I) IS NULL
 exports.getMeetingsSub = async (req, res) => {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A${DATA_START_ROW}:V`,
+      range: `${SHEET_NAME}!A${DATA_START_ROW}:N`,
     });
 
     const rows = response.data.values || [];
     const filtered = [];
 
     rows.forEach((row, idx) => {
-      const planned     = row[14]; // O
-      const actual      = row[15]; // P
-      const status      = (row[16] || "").toString().trim(); // Q
-      const reviseDate  = row[18]; // S
-      const reviseCount = row[19]; // T
+      const planned     = row[7];  // H
+      const actual      = row[8];  // I
+      const status      = (row[9] || "").toString().trim(); // J
+      const reviseDate  = row[11]; // L
+      const reviseCount = row[12]; // M
 
       // ✅ Show only if Planned exists AND Actual is empty
       const hasPlanned = planned && planned.toString().trim() !== "";
@@ -64,10 +64,10 @@ exports.submitMeetingsSubAction = async (req, res) => {
       return res.status(400).json({ success: false, message: "rowNumber and status required" });
     }
 
-    // Read existing P:U row
+    // Read existing I:N row
     const currentRow = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!P${rowNumber}:U${rowNumber}`,
+      range: `${SHEET_NAME}!I${rowNumber}:N${rowNumber}`,
     });
     const existing = (currentRow.data.values && currentRow.data.values[0]) || [];
     const currentReviseCount = parseInt(existing[4] || "0", 10) || 0;
@@ -85,10 +85,10 @@ exports.submitMeetingsSubAction = async (req, res) => {
       actualValue = getCurrentTimestamp();
     }
 
-    // Update P (Actual), Q (Status), R (CP Name), S (Revise Date), T (Revise Count), U (Remark)
+    // Update I (Actual), J (Status), K (CP Name), L (Revise Date), M (Revise Count), N (Remark)
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!P${rowNumber}:U${rowNumber}`,
+      range: `${SHEET_NAME}!I${rowNumber}:N${rowNumber}`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [[

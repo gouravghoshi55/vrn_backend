@@ -226,12 +226,9 @@ async function getFilteredLeads(sheets, user) {
       const followupCount = row[25] ? parseInt(row[25].trim(), 10) || 0 : 0;
       const doer = row[38] ? row[38].trim() : "";
 
-      // ✅ FIX: "Call Not Picked" वाली rows भी show होनी चाहिए
-      // क्योंकि CNP में planned date +7 days होती है और वो row फिर आनी चाहिए
-      const showRow =
-        !status ||
-        status.trim().toLowerCase() === "rescheduled" ||
-        status.trim().toLowerCase() === "call not picked";
+      // ✅ FIX: CNP leads को Field Visit से exclude करो
+      // CNP leads सिर्फ CNP page में दिखेंगी
+      const showRow = !status || status.trim().toLowerCase() === "rescheduled";
 
       if (showRow && plannedDate) {
         if (doerTag && doer !== doerTag) return;

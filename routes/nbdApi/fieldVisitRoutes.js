@@ -40,7 +40,9 @@ function getPlannedDateTime(dateStr) {
     const p = dateStr.split("-");
     if (p[0].length === 4) fd = `${p[2]}/${p[1]}/${p[0]}`;
   }
-  return `${fd} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+  return `${fd} ${String(now.getHours()).padStart(2, "0")}:${String(
+    now.getMinutes(),
+  ).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
 }
 
 function addDaysToSheetDate(sheetDateStr, days) {
@@ -71,7 +73,6 @@ function addDaysToSheetDate(sheetDateStr, days) {
     }
   }
   baseDate.setDate(baseDate.getDate() + days);
-
   const dd = String(baseDate.getDate()).padStart(2, "0");
   const mo = String(baseDate.getMonth() + 1).padStart(2, "0");
   const yy = baseDate.getFullYear();
@@ -91,19 +92,17 @@ function parseDate(dateStr) {
   return new Date(dateStr);
 }
 
-// ✅ FSR code mapping — Varun Sir added (he handles his own field visits)
 function getFSRCode(user) {
   if (!user) return null;
   const m = {
     "bdm4@company.com": "BDM4",
     "bdm5@company.com": "BDM5",
     "varun@company.com": "Varun Sir",
-     "bdm7@company.com": "BDM7",
+    "bdm7@company.com": "BDM7",
   };
   return m[user.email?.toLowerCase()] || null;
 }
 
-// ✅ Doer tag for NBD filtering — Varun Sir and Mohan Sir added
 function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
@@ -119,7 +118,6 @@ function getDoerTag(user) {
   return m[user.email?.toLowerCase()] || null;
 }
 
-// ✅ Read existing remarks, prepend new with timestamp
 async function buildAppendedRemarks(sheets, sheetName, cellRange, newRemark) {
   if (!newRemark || !String(newRemark).trim()) return null;
   let existing = "";
@@ -227,10 +225,13 @@ async function getFilteredLeads(sheets, user) {
       const latestRemarks = row[24] ? row[24].trim() : "";
       const followupCount = row[25] ? parseInt(row[25].trim(), 10) || 0 : 0;
       const doer = row[38] ? row[38].trim() : "";
-      const fsrDoer = row[39] ? row[39].trim() : "";
 
-      // ✅ Only show empty status or "Rescheduled" — "Call Not Picked" automatically excluded
-      const showRow = !status || status.trim().toLowerCase() === "rescheduled";
+      // ✅ FIX: "Call Not Picked" वाली rows भी show होनी चाहिए
+      // क्योंकि CNP में planned date +7 days होती है और वो row फिर आनी चाहिए
+      const showRow =
+        !status ||
+        status.trim().toLowerCase() === "rescheduled" ||
+        status.trim().toLowerCase() === "call not picked";
 
       if (showRow && plannedDate) {
         if (doerTag && doer !== doerTag) return;
@@ -254,7 +255,6 @@ async function getFilteredLeads(sheets, user) {
           previousRemarks,
           previousRemarksDate,
           doer,
-          fsrDoer,
         });
       }
     });
@@ -285,7 +285,10 @@ router.post("/update", async (req, res) => {
       rescheduleDate,
       notInterestedReason,
       leadInfo,
+      // ✅ FIX: actionType frontend से भेजो ताकि backend को पता चले
+      actionType,
     } = req.body;
+
     if (!rowIndex)
       return res
         .status(400)
@@ -294,6 +297,7 @@ router.post("/update", async (req, res) => {
     const updates = [];
     const timestamp = getCurrentTimestamp();
 
+    // ✅ Followup Count increment
     let currentFollowupCount = 0;
     try {
       const cr = await req.sheets.spreadsheets.values.get({
@@ -308,18 +312,25 @@ router.post("/update", async (req, res) => {
       values: [[newFollowupCount]],
     });
 
+    // ✅ FIX: loggerStatus अलग track करो — हर case में सही value
+    let loggerStatus = "Done";
+
     if (rescheduleDate && String(rescheduleDate).trim() !== "") {
-      // ✅ Reschedule
+      // ✅ Reschedule या COLD दोनों यहाँ आते हैं (rescheduleDate है)
+      const isColAction = actionType === "cold";
+      loggerStatus = isColAction ? "COLD" : "Rescheduled";
+
       updates.push({
         range: `'${NBD_SHEET_NAME}'!U${rowIndex}`,
         values: [[getPlannedDateTime(rescheduleDate)]],
       });
       updates.push({
         range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
-        values: [["Rescheduled"]],
+        values: [[isColAction ? "COLD" : "Rescheduled"]],
       });
     } else if (status === "Not Interested") {
-      // ✅ Not Interested
+      loggerStatus = "Not Interested";
+
       updates.push({
         range: `'${NBD_SHEET_NAME}'!V${rowIndex}`,
         values: [[timestamp]],
@@ -337,7 +348,9 @@ router.post("/update", async (req, res) => {
           req.user?.email,
         );
     } else if (status === "Call Not Picked") {
-      // ✅ CNP — auto +7 days to planned date (Column U)
+      loggerStatus = "Call Not Picked";
+
+      // ✅ CNP — auto +7 days to planned date
       let existingPlannedDate = "";
       try {
         const pd = await req.sheets.spreadsheets.values.get({
@@ -358,7 +371,9 @@ router.post("/update", async (req, res) => {
         values: [["Call Not Picked"]],
       });
     } else {
-      // ✅ Done (or any other status)
+      // ✅ Done
+      loggerStatus = status || "Done";
+
       updates.push({
         range: `'${NBD_SHEET_NAME}'!V${rowIndex}`,
         values: [[timestamp]],
@@ -368,8 +383,7 @@ router.post("/update", async (req, res) => {
         values: [[status || "Done"]],
       });
 
-      // ✅ FSR users write their code to AN column on "Done"
-      // ✅ Varun Sir also writes his code to AN column (he handles full lifecycle)
+      // ✅ FSR users अपना code AN column में लिखते हैं
       if (req.user) {
         const fsrCode = getFSRCode(req.user);
         if (fsrCode) {
@@ -381,7 +395,7 @@ router.post("/update", async (req, res) => {
       }
     }
 
-    // ✅ Remarks — APPEND with timestamp
+    // ✅ Remarks — timestamp के साथ append
     if (remarks && String(remarks).trim() !== "") {
       const appended = await buildAppendedRemarks(
         req.sheets,
@@ -400,25 +414,34 @@ router.post("/update", async (req, res) => {
       spreadsheetId: SPREADSHEET_ID,
       requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
+
+    // ✅ FIX: Logger में सही status — loggerStatus use करो, "Done" नहीं
     if (leadInfo)
       await appendToLogger(
         req.sheets,
         leadInfo,
         "Step 2 - Field Visit",
-        status || "Done",
+        loggerStatus, // ✅ यही fix है
         remarks || "",
         req.user?.email,
       );
 
+    // ✅ Response message
+    let responseMessage = "Field Visit Done";
+    if (rescheduleDate) {
+      responseMessage =
+        actionType === "cold"
+          ? "Marked COLD — Next follow-up after 15 days"
+          : "Rescheduled Successfully";
+    } else if (status === "Not Interested") {
+      responseMessage = "Marked Not Interested";
+    } else if (status === "Call Not Picked") {
+      responseMessage = "Marked Call Not Picked — Planned date moved +7 days";
+    }
+
     res.json({
       success: true,
-      message: rescheduleDate
-        ? "Rescheduled"
-        : status === "Not Interested"
-          ? "Marked Not Interested"
-          : status === "Call Not Picked"
-            ? "Marked Call Not Picked — Planned date moved +7 days"
-            : "Field Visit Done",
+      message: responseMessage,
       newFollowupCount,
     });
   } catch (error) {

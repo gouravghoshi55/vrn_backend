@@ -228,7 +228,10 @@ async function getFilteredLeads(sheets, user) {
 
       // ✅ FIX: CNP leads को Field Visit से exclude करो
       // CNP leads सिर्फ CNP page में दिखेंगी
-      const showRow = !status || status.trim().toLowerCase() === "rescheduled";
+      const showRow =
+        !status ||
+        status.trim().toLowerCase() === "rescheduled" ||
+        status.trim().toLowerCase() === "next followup required";
 
       if (showRow && plannedDate) {
         if (doerTag && doer !== doerTag) return;
@@ -314,8 +317,20 @@ router.post("/update", async (req, res) => {
 
     if (rescheduleDate && String(rescheduleDate).trim() !== "") {
       // ✅ Reschedule या COLD दोनों यहाँ आते हैं (rescheduleDate है)
-      const isColAction = actionType === "cold";
-      loggerStatus = isColAction ? "COLD" : "Rescheduled";
+      const isColdAction = actionType === "cold";
+      const isNextFollowup = actionType === "next-followup";
+
+      if (isColdAction) {
+        loggerStatus = "COLD";
+      } else if (isNextFollowup) {
+        loggerStatus = "Next Followup Required";
+      } else {
+        loggerStatus = "Rescheduled";
+      }
+
+      let statusW = "Rescheduled";
+      if (isColdAction) statusW = "COLD";
+      else if (isNextFollowup) statusW = "Next Followup Required";
 
       updates.push({
         range: `'${NBD_SHEET_NAME}'!U${rowIndex}`,
@@ -323,7 +338,7 @@ router.post("/update", async (req, res) => {
       });
       updates.push({
         range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
-        values: [[isColAction ? "COLD" : "Rescheduled"]],
+        values: [[statusW]],
       });
     } else if (status === "Not Interested") {
       loggerStatus = "Not Interested";
@@ -424,12 +439,16 @@ router.post("/update", async (req, res) => {
       );
 
     // ✅ Response message
+    // ✅ Response message
     let responseMessage = "Field Visit Done";
     if (rescheduleDate) {
-      responseMessage =
-        actionType === "cold"
-          ? "Marked COLD — Next follow-up after 15 days"
-          : "Rescheduled Successfully";
+      if (actionType === "cold") {
+        responseMessage = "Marked COLD — Next follow-up after 15 days";
+      } else if (actionType === "next-followup") {
+        responseMessage = "Next Followup Scheduled Successfully";
+      } else {
+        responseMessage = "Rescheduled Successfully";
+      }
     } else if (status === "Not Interested") {
       responseMessage = "Marked Not Interested";
     } else if (status === "Call Not Picked") {

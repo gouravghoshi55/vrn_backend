@@ -112,7 +112,12 @@ router.get("/list", async (req, res) => {
     });
 
     // Sort by planned date (earliest first)
-    leads.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
+    // In backend /list — at sort line
+    leads.sort(
+      (a, b) =>
+        parseDate(a.nextFollowUpDate || a.plannedDate) -
+        parseDate(b.nextFollowUpDate || b.plannedDate),
+    );
 
     res.json({ success: true, data: leads, total: leads.length });
   } catch (error) {

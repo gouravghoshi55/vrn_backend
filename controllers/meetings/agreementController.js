@@ -6,7 +6,6 @@ const SPREADSHEET_ID = "1iGI-DvLlBPj5mmwgOCs926xtaYVgTtoYcD8h2qhhhQc";
 const SHEET_NAME = "FMS";
 const DATA_START_ROW = 8;
 
-// ✅ Helper — convert "YYYY-MM-DDTHH:mm" to "DD/MM/YYYY HH:mm:ss"
 function formatPlannedDateTime(dateStr) {
   if (!dateStr) return "";
   if (dateStr.includes("T")) {
@@ -18,40 +17,46 @@ function formatPlannedDateTime(dateStr) {
   return dateStr;
 }
 
-// GET — Show rows where Planned NOT NULL & Actual (Q) IS NULL
-// Planned source:
-//   - If Status (R) === "Next Followup Required" => use W (Next Follow date)
-//   - Else => use P (original Planned with array formula)
+// GET — Show pending rows
 exports.getAgreementData = async (req, res) => {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!A${DATA_START_ROW}:W`,
+      valueRenderOption: "FORMATTED_VALUE", // ensure formula results come as text
+      dateTimeRenderOption: "FORMATTED_STRING",
     });
 
     const rows = response.data.values || [];
     const filtered = [];
 
     rows.forEach((row, idx) => {
-      const plannedP = row[15]; // P
-      const actual = row[16]; // Q
+      // ✅ Safely read cells (avoid undefined from trailing empty cells)
+      const plannedP = (row[15] || "").toString().trim(); // P
+      const actual = (row[16] || "").toString().trim(); // Q
       const status = (row[17] || "").toString().trim(); // R
-      const nextFollowW = row[22]; // W
+      const nextFollowW = (row[22] || "").toString().trim(); // W
 
-      // Decide which planned date to use
+      // const rowNum = DATA_START_ROW + idx;
+      // console.log(`Row ${rowNum}:`, {
+      //   P: row[15],
+      //   Q: row[16],
+      //   R: row[17],
+      //   W: row[22],
+      //   rowLength: row.length,
+      // });
+
+      // ✅ Decide effective planned date
       let effectivePlanned = "";
       if (status === "Next Followup Required") {
-        effectivePlanned = nextFollowW || "";
+        // Prefer W; fallback to P if W not yet filled
+        effectivePlanned = nextFollowW || plannedP;
       } else {
-        effectivePlanned = plannedP || "";
+        effectivePlanned = plannedP;
       }
 
-      // Filter: planned present AND actual empty
-      if (
-        effectivePlanned &&
-        effectivePlanned.toString().trim() !== "" &&
-        (!actual || actual.toString().trim() === "")
-      ) {
+      // ✅ Show if planned exists AND actual empty
+      if (effectivePlanned !== "" && actual === "") {
         filtered.push({
           rowNumber: DATA_START_ROW + idx,
           uniqueId: row[1] || "",
@@ -71,7 +76,7 @@ exports.getAgreementData = async (req, res) => {
   }
 };
 
-// POST — Save Agreement action (with optional PDF upload)
+// POST — Save Agreement action
 exports.submitAgreementAction = async (req, res) => {
   try {
     const {
@@ -89,7 +94,7 @@ exports.submitAgreementAction = async (req, res) => {
         .json({ success: false, message: "rowNumber and status required" });
     }
 
-    // ✅ Next Followup Required — write date to W column (NOT P, kyunki P me array formula hai)
+    // ✅ Next Followup Required → write to W (not P)
     if (status === "Next Followup Required") {
       if (!nextPlannedDate) {
         return res.status(400).json({
@@ -100,7 +105,6 @@ exports.submitAgreementAction = async (req, res) => {
 
       const formattedDate = formatPlannedDateTime(nextPlannedDate);
 
-      // Update: Q (Actual=blank), R (Status), V (Remark), W (Next Follow date)
       await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
         requestBody: {
@@ -128,7 +132,7 @@ exports.submitAgreementAction = async (req, res) => {
       });
     }
 
-    // ✅ Existing Done / other status flow
+    // ✅ Done / other status flow
     let pdfLink = "";
     if (req.file) {
       const fileName = `Agreement_${rowNumber}_${Date.now()}.pdf`;
@@ -137,7 +141,6 @@ exports.submitAgreementAction = async (req, res) => {
 
     const actualValue = status === "Done" ? getCurrentTimestamp() : "";
 
-    // Update Q(Actual), R(Status), S(Deals In), T(Contact), U(PDF), V(Remark)
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!Q${rowNumber}:V${rowNumber}`,

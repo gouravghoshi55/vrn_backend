@@ -231,7 +231,8 @@ async function getFilteredLeads(sheets, user) {
       const showRow =
         !status ||
         status.trim().toLowerCase() === "rescheduled" ||
-        status.trim().toLowerCase() === "next followup required";
+        status.trim().toLowerCase() === "next followup required" ||
+        status.trim().toLowerCase() === "cold";
 
       if (showRow && plannedDate) {
         if (doerTag && doer !== doerTag) return;

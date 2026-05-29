@@ -18,24 +18,38 @@ function formatPlannedDateTime(dateStr) {
   return dateStr;
 }
 
-// GET — Show rows where P (Planned) NOT NULL & Q (Actual) IS NULL
+// GET — Show rows where Planned NOT NULL & Actual (Q) IS NULL
+// Planned source:
+//   - If Status (R) === "Next Followup Required" => use W (Next Follow date)
+//   - Else => use P (original Planned with array formula)
 exports.getAgreementData = async (req, res) => {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A${DATA_START_ROW}:V`,
+      range: `${SHEET_NAME}!A${DATA_START_ROW}:W`,
     });
 
     const rows = response.data.values || [];
     const filtered = [];
 
     rows.forEach((row, idx) => {
-      const planned = row[15]; // P
-      const actual = row[16];  // Q
+      const plannedP = row[15]; // P
+      const actual = row[16]; // Q
+      const status = (row[17] || "").toString().trim(); // R
+      const nextFollowW = row[22]; // W
 
+      // Decide which planned date to use
+      let effectivePlanned = "";
+      if (status === "Next Followup Required") {
+        effectivePlanned = nextFollowW || "";
+      } else {
+        effectivePlanned = plannedP || "";
+      }
+
+      // Filter: planned present AND actual empty
       if (
-        planned &&
-        planned.toString().trim() !== "" &&
+        effectivePlanned &&
+        effectivePlanned.toString().trim() !== "" &&
         (!actual || actual.toString().trim() === "")
       ) {
         filtered.push({
@@ -44,7 +58,8 @@ exports.getAgreementData = async (req, res) => {
           firmName: row[2] || "",
           contact: row[3] || "",
           locality: row[4] || "",
-          plannedDate: planned,
+          plannedDate: effectivePlanned,
+          status: status,
         });
       }
     });
@@ -65,7 +80,7 @@ exports.submitAgreementAction = async (req, res) => {
       dealsIn,
       contactInOffice,
       remark,
-      nextPlannedDate, // ✅ NEW
+      nextPlannedDate,
     } = req.body;
 
     if (!rowNumber || !status) {
@@ -74,7 +89,7 @@ exports.submitAgreementAction = async (req, res) => {
         .json({ success: false, message: "rowNumber and status required" });
     }
 
-    // ✅ Next Followup Required — override Planned (P), no actual, no PDF needed
+    // ✅ Next Followup Required — write date to W column (NOT P, kyunki P me array formula hai)
     if (status === "Next Followup Required") {
       if (!nextPlannedDate) {
         return res.status(400).json({
@@ -85,16 +100,12 @@ exports.submitAgreementAction = async (req, res) => {
 
       const formattedDate = formatPlannedDateTime(nextPlannedDate);
 
-      // Update P (Planned), Q (Actual=blank), R (Status), V (Remark)
+      // Update: Q (Actual=blank), R (Status), V (Remark), W (Next Follow date)
       await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
         requestBody: {
           valueInputOption: "USER_ENTERED",
           data: [
-            {
-              range: `${SHEET_NAME}!P${rowNumber}`,
-              values: [[formattedDate]],
-            },
             {
               range: `${SHEET_NAME}!Q${rowNumber}:R${rowNumber}`,
               values: [["", "Next Followup Required"]],
@@ -102,6 +113,10 @@ exports.submitAgreementAction = async (req, res) => {
             {
               range: `${SHEET_NAME}!V${rowNumber}`,
               values: [[remark || ""]],
+            },
+            {
+              range: `${SHEET_NAME}!W${rowNumber}`,
+              values: [[formattedDate]],
             },
           ],
         },
@@ -113,7 +128,7 @@ exports.submitAgreementAction = async (req, res) => {
       });
     }
 
-    // ✅ Existing Done flow
+    // ✅ Existing Done / other status flow
     let pdfLink = "";
     if (req.file) {
       const fileName = `Agreement_${rowNumber}_${Date.now()}.pdf`;

@@ -6,27 +6,29 @@ const RETRYABLE_MESSAGES = [
   "Client network socket disconnected",
   "ECONNRESET",
 ];
+const RETRYABLE_STATUS = [429, 500, 502, 503, 504];
 
 function isRetryable(err) {
   if (!err) return false;
   if (RETRYABLE_CODES.includes(err.code)) return true;
   if (err.cause && RETRYABLE_CODES.includes(err.cause.code)) return true;
+  
+  const status = err.response?.status || err.code;
+  if (RETRYABLE_STATUS.includes(status)) return true;
+  
   const msg = err.message || "";
   return RETRYABLE_MESSAGES.some((e) => msg.includes(e));
 }
 
-async function withRetry(fn, maxAttempts = 4, baseDelay = 400) {
+async function withRetry(fn, maxAttempts = 5, baseDelay = 400) {
   let lastErr;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (err) {
       lastErr = err;
-
-      if (!isRetryable(err) || attempt === maxAttempts) {
-        throw err;
-      }
-
+      if (!isRetryable(err) || attempt === maxAttempts) throw err;
+      
       const delay = baseDelay * Math.pow(2, attempt - 1) + Math.random() * 200;
       console.warn(
         `⚠️ Sheets API retry ${attempt}/${maxAttempts} after ${Math.round(delay)}ms — ${err.code || err.message?.substring(0, 80)}`
@@ -37,8 +39,9 @@ async function withRetry(fn, maxAttempts = 4, baseDelay = 400) {
   throw lastErr;
 }
 
-function getRetryableSheets() {
-  const base = getSheets();
+// 🔥 Async getters — must be awaited in middleware
+async function getRetryableSheets() {
+  const base = await getSheets();
   return {
     spreadsheets: {
       values: {
@@ -56,8 +59,8 @@ function getRetryableSheets() {
   };
 }
 
-function getRetryableDrive() {
-  const base = getDrive();
+async function getRetryableDrive() {
+  const base = await getDrive();
   return {
     files: {
       create: (p) => withRetry(() => base.files.create(p)),

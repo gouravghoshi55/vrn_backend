@@ -11,9 +11,8 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ============================================
-// ✅ CORS — Fixed (no Error throw)
+// CORS
 // ============================================
-
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
@@ -32,9 +31,7 @@ app.use(
       if (allowedOrigins.includes(origin)) return callback(null, true);
       if (allowedPatterns.some((p) => p.test(origin)))
         return callback(null, true);
-
       console.warn(`⛔ CORS blocked origin: ${origin}`);
-      // ✅ false instead of Error — returns clean 403 without crashing function
       return callback(null, false);
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -43,37 +40,35 @@ app.use(
   })
 );
 
-// ============================================
-// Body Parsing
-// ============================================
-
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // ============================================
-// ✅ Attach retry-enabled Sheets & Drive to request
-// (Lazy — no top-level init, no race condition)
+// ✅ ASYNC middleware — attach retry-enabled clients
 // ============================================
-
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   try {
-    req.sheets = getRetryableSheets();
-    req.drive = getRetryableDrive();
+    const [sheets, drive] = await Promise.all([
+      getRetryableSheets(),
+      getRetryableDrive(),
+    ]);
+    req.sheets = sheets;
+    req.drive = drive;
     next();
   } catch (err) {
     console.error("❌ Failed to init Google clients:", err.message);
-    return res.status(500).json({
+    return res.status(503).json({
       success: false,
-      error: "Google API initialization failed",
+      error: "Service initializing, please retry in a moment",
+      retry: true,
       message: err.message,
     });
   }
 });
 
 // ============================================
-// Import Routes
+// Routes
 // ============================================
-
 const { protect } = require("./middleware/authMiddleware");
 
 const authRoutes = require("./routes/authRoutes");
@@ -95,10 +90,6 @@ const callToBrokerRoutes = require("./routes/cp/callToBrokerRoutes");
 const fullKittingRoutes = require("./routes/meetings/fullKittingRoutes");
 const meetingsSubRoutes = require("./routes/meetings/meetingsSubRoutes");
 const agreementRoutes = require("./routes/meetings/agreementRoutes");
-
-// ============================================
-// Use Routes
-// ============================================
 
 app.use("/api/auth", authRoutes);
 app.use("/api/leads", protect, nbdinRoutes);
@@ -122,9 +113,8 @@ app.use("/api/meetings/meetings-sub", meetingsSubRoutes);
 app.use("/api/meetings/agreement", agreementRoutes);
 
 // ============================================
-// Health Check
+// Health & Warmup
 // ============================================
-
 app.get("/", (req, res) => {
   res.json({
     message: "🚀 Backend Server is Running!",
@@ -141,30 +131,46 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// ============================================
-// Global Error Handler
-// ============================================
+// 🔥 NEW: Warmup endpoint — touches Google API to keep connection alive
+app.get("/api/warmup", async (req, res) => {
+  const t = Date.now();
+  try {
+    await req.sheets.spreadsheets.get({
+      spreadsheetId: process.env.SPREADSHEET_ID,
+      fields: "spreadsheetId",
+    });
+    res.json({
+      success: true,
+      warm: true,
+      ms: Date.now() - t,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      ms: Date.now() - t,
+    });
+  }
+});
 
+// ============================================
+// Error Handler
+// ============================================
 app.use((err, req, res, next) => {
   console.error("Server Error:", err.message);
-
   if (err.message === "CORS not allowed") {
     return res.status(403).json({
       success: false,
       error: "CORS Error: Origin not allowed",
     });
   }
-
   res.status(500).json({
     success: false,
     error: "Internal Server Error",
     message: err.message,
   });
 });
-
-// ============================================
-// Start Server (local only — Vercel uses module.exports)
-// ============================================
 
 if (require.main === module) {
   app.listen(PORT, () => {

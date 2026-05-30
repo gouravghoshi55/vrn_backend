@@ -1,22 +1,75 @@
 const { google } = require("googleapis");
 
-const auth = new google.auth.GoogleAuth({
-  credentials: {
-    type: process.env.GOOGLE_TYPE,
-    project_id: process.env.GOOGLE_PROJECT_ID,
-    private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-    private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    client_email: process.env.GOOGLE_CLIENT_EMAIL,
-    client_id: process.env.GOOGLE_CLIENT_ID,
-    token_uri: process.env.GOOGLE_TOKEN_URI,
-  },
-  scopes: [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-  ],
-});
+// ✅ Singleton — persists within warm container
+let _authClient = null;
+let _sheetsClient = null;
+let _driveClient = null;
 
-const sheets = google.sheets({ version: "v4", auth });
-const drive = google.drive({ version: "v3", auth });
+function getAuth() {
+  if (_authClient) return _authClient;
 
-module.exports = { auth, sheets, drive };
+  const privateKey = (process.env.GOOGLE_PRIVATE_KEY || "").replace(
+    /\\n/g,
+    "\n"
+  );
+
+  if (!process.env.GOOGLE_CLIENT_EMAIL || !privateKey) {
+    throw new Error(
+      "Missing GOOGLE_CLIENT_EMAIL or GOOGLE_PRIVATE_KEY env vars"
+    );
+  }
+
+  _authClient = new google.auth.JWT({
+    email: process.env.GOOGLE_CLIENT_EMAIL,
+    key: privateKey,
+    scopes: [
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive",
+    ],
+  });
+
+  return _authClient;
+}
+
+function getSheets() {
+  if (_sheetsClient) return _sheetsClient;
+  _sheetsClient = google.sheets({ version: "v4", auth: getAuth() });
+  return _sheetsClient;
+}
+
+function getDrive() {
+  if (_driveClient) return _driveClient;
+  _driveClient = google.drive({ version: "v3", auth: getAuth() });
+  return _driveClient;
+}
+
+// ✅ Backward compatibility — Proxy makes `sheets.spreadsheets.values.get()` work
+// without changing any existing route code
+const sheets = new Proxy(
+  {},
+  {
+    get(_, prop) {
+      return getSheets()[prop];
+    },
+  }
+);
+
+const drive = new Proxy(
+  {},
+  {
+    get(_, prop) {
+      return getDrive()[prop];
+    },
+  }
+);
+
+const auth = new Proxy(
+  {},
+  {
+    get(_, prop) {
+      return getAuth()[prop];
+    },
+  }
+);
+
+module.exports = { auth, sheets, drive, getAuth, getSheets, getDrive };

@@ -1,31 +1,41 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { google } = require("googleapis");
+
+const {
+  getRetryableSheets,
+  getRetryableDrive,
+} = require("./utils/sheetsRetry");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ============================================
-// ✅ CORS FIX (FINAL)
+// ✅ CORS — Fixed (no Error throw)
 // ============================================
 
 const allowedOrigins = [
   "http://localhost:5173",
+  "http://localhost:3000",
   "https://vrn-sales.vercel.app",
+];
+
+const allowedPatterns = [
+  /^https:\/\/vrn-sales-.*\.vercel\.app$/,
+  /^https:\/\/vrn-backend-.*\.vercel\.app$/,
 ];
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      // allow requests with no origin (Postman, mobile apps)
       if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (allowedPatterns.some((p) => p.test(origin)))
         return callback(null, true);
-      } else {
-        return callback(new Error("CORS not allowed"));
-      }
+
+      console.warn(`⛔ CORS blocked origin: ${origin}`);
+      // ✅ false instead of Error — returns clean 403 without crashing function
+      return callback(null, false);
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -33,51 +43,31 @@ app.use(
   })
 );
 
-// ❌ REMOVED: app.options("*", cors());  ← THIS WAS CAUSING ERROR
-
 // ============================================
 // Body Parsing
 // ============================================
 
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // ============================================
-// Google Sheets Setup
-// ============================================
-
-const auth = new google.auth.JWT({
-  email: process.env.GOOGLE_CLIENT_EMAIL,
-  key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-});
-
-let sheets;
-
-async function initializeGoogleSheets() {
-  try {
-    await auth.authorize();
-    sheets = google.sheets({ version: "v4", auth });
-    console.log("✅ Google Sheets connected successfully!");
-  } catch (error) {
-    console.error("❌ Google Sheets connection failed:", error);
-  }
-}
-
-initializeGoogleSheets();
-
-// ============================================
-// Attach sheets to request
+// ✅ Attach retry-enabled Sheets & Drive to request
+// (Lazy — no top-level init, no race condition)
 // ============================================
 
 app.use((req, res, next) => {
-  if (!sheets) {
-    return res.status(503).json({
+  try {
+    req.sheets = getRetryableSheets();
+    req.drive = getRetryableDrive();
+    next();
+  } catch (err) {
+    console.error("❌ Failed to init Google clients:", err.message);
+    return res.status(500).json({
       success: false,
-      error: "Google Sheets not connected. Please try again later.",
+      error: "Google API initialization failed",
+      message: err.message,
     });
   }
-  req.sheets = sheets;
-  next();
 });
 
 // ============================================
@@ -102,9 +92,9 @@ const cpContactUpdateRoutes = require("./routes/cp/cpContactUpdateRoutes");
 const cnpRoutes = require("./routes/nbdApi/cnpRoutes");
 const leadSearchRoutes = require("./routes/leadSearch");
 const callToBrokerRoutes = require("./routes/cp/callToBrokerRoutes");
-const fullKittingRoutes  = require("./routes/meetings/fullKittingRoutes");
-const meetingsSubRoutes  = require("./routes/meetings/meetingsSubRoutes");
-const agreementRoutes    = require("./routes/meetings/agreementRoutes");
+const fullKittingRoutes = require("./routes/meetings/fullKittingRoutes");
+const meetingsSubRoutes = require("./routes/meetings/meetingsSubRoutes");
+const agreementRoutes = require("./routes/meetings/agreementRoutes");
 
 // ============================================
 // Use Routes
@@ -129,7 +119,8 @@ app.use("/api/cnp", protect, cnpRoutes);
 app.use("/api/call-to-broker", protect, callToBrokerRoutes);
 app.use("/api/meetings/full-kitting", fullKittingRoutes);
 app.use("/api/meetings/meetings-sub", meetingsSubRoutes);
-app.use("/api/meetings/agreement",    agreementRoutes);
+app.use("/api/meetings/agreement", agreementRoutes);
+
 // ============================================
 // Health Check
 // ============================================
@@ -146,7 +137,7 @@ app.get("/api/health", (req, res) => {
   res.json({
     success: true,
     message: "Server is healthy",
-    sheetsConnected: !!sheets,
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -155,7 +146,7 @@ app.get("/api/health", (req, res) => {
 // ============================================
 
 app.use((err, req, res, next) => {
-  console.error("Server Error:", err);
+  console.error("Server Error:", err.message);
 
   if (err.message === "CORS not allowed") {
     return res.status(403).json({
@@ -172,11 +163,13 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================
-// Start Server
+// Start Server (local only — Vercel uses module.exports)
 // ============================================
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server is running on port ${PORT}`);
+  });
+}
 
 module.exports = app;

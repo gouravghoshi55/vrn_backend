@@ -8,6 +8,7 @@ const NOT_INTERESTED_SHEET = "Not Interested Reasons";
 
 const LEAD_QUAL_SPREADSHEET_ID = "17NsMDuq_woISO9CJTBh2e5BaZaKcSXkBEoEF6CNlDd0";
 const LEAD_QUAL_SHEET_NAME = "FMS";
+const LEAD_ASSIGN_LOGGER_SHEET = "Lead Assign Logger Sheet";
 
 function parseDate(dateStr) {
   if (!dateStr) return new Date(0);
@@ -167,6 +168,45 @@ async function appendToNotInterestedSheet(
   }
 }
 
+// ✅ NEW — Lead Assignment Logger
+async function appendToLeadAssignLogger(
+  sheets,
+  leadInfo,
+  previousDoer,
+  newDoer,
+  assignedBy,
+  stepName = "Lead Assignment",
+) {
+  try {
+    const ts = getCurrentTimestamp();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${LEAD_ASSIGN_LOGGER_SHEET}'!A:H`,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: [
+          [
+            ts,
+            stepName,
+            leadInfo.uniqueId || "",
+            leadInfo.customerName || "",
+            leadInfo.customerContact || "",
+            previousDoer || "(unassigned)",
+            newDoer || "",
+            assignedBy || "",
+          ],
+        ],
+      },
+    });
+    console.log(
+      `✅ Lead assign logged: ${previousDoer || "(unassigned)"} → ${newDoer}`,
+    );
+  } catch (e) {
+    console.error("❌ Lead Assign Logger failed:", e.message);
+  }
+}
+
 async function getFilteredLeads(sheets, user) {
   try {
     const response = await sheets.spreadsheets.values.get({
@@ -181,7 +221,8 @@ async function getFilteredLeads(sheets, user) {
       const importantNote = row[10] ? row[10].trim() : "";
       const status = row[14] ? row[14].trim() : "";
       // ✅ Planned Date: Q column (16) primary, M column (12) fallback
-      const plannedDate = (row[16] ? row[16].trim() : "") || (row[12] ? row[12].trim() : "");
+      const plannedDate =
+        (row[16] ? row[16].trim() : "") || (row[12] ? row[12].trim() : "");
       const actualDate = row[13] ? row[13].trim() : "";
       const followUpCountStr = row[17] ? row[17].trim() : "0";
       const pickAndDrop = row[18] ? row[18].trim() : "No";
@@ -232,13 +273,11 @@ router.get("/nbdin", async (req, res) => {
     leads.sort((a, b) => parseDate(a.plannedDate) - parseDate(b.plannedDate));
     res.json({ success: true, data: leads, total: leads.length });
   } catch (error) {
-    res
-      .status(500)
-      .json({
-        success: false,
-        error: "Failed to fetch leads",
-        message: error.message,
-      });
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch leads",
+      message: error.message,
+    });
   }
 });
 
@@ -351,43 +390,80 @@ router.post("/nbdin/assign", async (req, res) => {
     const { uniqueId, assignTo } = req.body;
     if (!uniqueId || !assignTo)
       return res.status(400).json({ success: false, error: "Missing fields" });
+
     // ✅ Varun Sir and Mohan Sir added to allowed list
     if (!["BDM1", "BDM2", "BDM6", "Varun Sir", "Mohan Sir"].includes(assignTo))
       return res
         .status(400)
         .json({ success: false, error: "Invalid assignTo" });
 
+    // ✅ Step 1 — Find row in Lead Qualification Sheet
     const response = await req.sheets.spreadsheets.values.get({
       spreadsheetId: LEAD_QUAL_SPREADSHEET_ID,
       range: `'${LEAD_QUAL_SHEET_NAME}'!A:V`,
     });
     const rows = response.data.values || [];
     let targetRowIndex = -1;
+    let previousDoer = "";
+    let leadRow = null;
+
     for (let i = 0; i < rows.length; i++) {
       if ((rows[i][1] || "").trim() === uniqueId) {
         targetRowIndex = i + 1;
+        leadRow = rows[i];
+        previousDoer = (rows[i][21] || "").trim(); // Col V = previous doer
         break;
       }
     }
+
     if (targetRowIndex === -1)
       return res
         .status(404)
         .json({ success: false, error: `Lead "${uniqueId}" not found` });
 
+    // ✅ Step 2 — Skip if no actual change (avoid duplicate logs)
+    if (previousDoer === assignTo) {
+      return res.json({
+        success: true,
+        message: `No change — already assigned to ${assignTo}`,
+        skipped: true,
+      });
+    }
+
+    // ✅ Step 3 — Update Col V in Lead Qualification Sheet
     await req.sheets.spreadsheets.values.update({
       spreadsheetId: LEAD_QUAL_SPREADSHEET_ID,
       range: `'${LEAD_QUAL_SHEET_NAME}'!V${targetRowIndex}`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [[assignTo]] },
     });
+
+    // ✅ Step 4 — Build leadInfo from the row we already fetched
+    const leadInfo = {
+      uniqueId: leadRow[1] || uniqueId,
+      customerName: leadRow[2] || "",
+      customerContact: leadRow[3] || "",
+    };
+
+    // ✅ Step 5 — Append to Lead Assign Logger Sheet
+    await appendToLeadAssignLogger(
+      req.sheets,
+      leadInfo,
+      previousDoer,
+      assignTo,
+      req.user?.email,
+    );
+
     res.json({
       success: true,
       message: `Lead ${uniqueId} assigned to ${assignTo}`,
+      previousDoer: previousDoer || "(unassigned)",
+      newDoer: assignTo,
     });
   } catch (error) {
+    console.error("❌ Assign error:", error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 module.exports = router;
-

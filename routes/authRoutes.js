@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const jwt = require("jsonwebtoken");
 
-const USER_SPREADSHEET_ID = process.env.USER_SPREADSHEET_ID; // ✅ Changed
+const USER_SPREADSHEET_ID = process.env.USER_SPREADSHEET_ID;
 const USERS_SHEET = "USERS";
 
 // ============================================
@@ -44,13 +44,7 @@ router.post("/login", async (req, res) => {
 
     // Get users from sheet
     const users = await getUsers(req.sheets);
-    console.log("Total users found:", users.length);
-    console.log(
-      "All emails:",
-      users.map((u) => u.email),
-    );
-
-    // Find user
+   // Find user
     const user = users.find((u) => u.email === email.toLowerCase().trim());
 
     if (!user) {

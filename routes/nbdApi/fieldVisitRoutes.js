@@ -286,7 +286,6 @@ router.post("/update", async (req, res) => {
       rescheduleDate,
       notInterestedReason,
       leadInfo,
-      // ✅ FIX: actionType frontend से भेजो ताकि backend को पता चले
       actionType,
     } = req.body;
 
@@ -298,7 +297,7 @@ router.post("/update", async (req, res) => {
     const updates = [];
     const timestamp = getCurrentTimestamp();
 
-    // ✅ Followup Count increment
+    // Followup Count increment
     let currentFollowupCount = 0;
     try {
       const cr = await req.sheets.spreadsheets.values.get({
@@ -313,11 +312,16 @@ router.post("/update", async (req, res) => {
       values: [[newFollowupCount]],
     });
 
-    // ✅ FIX: loggerStatus अलग track करो — हर case में सही value
     let loggerStatus = "Done";
 
+    // ✅ FIX: Actual timestamp ALWAYS likho V column mein — har action pe
+    updates.push({
+      range: `'${NBD_SHEET_NAME}'!V${rowIndex}`,
+      values: [[timestamp]],
+    });
+
     if (rescheduleDate && String(rescheduleDate).trim() !== "") {
-      // ✅ Reschedule या COLD दोनों यहाँ आते हैं (rescheduleDate है)
+      // Reschedule / COLD / Next Followup
       const isColdAction = actionType === "cold";
       const isNextFollowup = actionType === "next-followup";
 
@@ -343,11 +347,7 @@ router.post("/update", async (req, res) => {
       });
     } else if (status === "Not Interested") {
       loggerStatus = "Not Interested";
-
-      updates.push({
-        range: `'${NBD_SHEET_NAME}'!V${rowIndex}`,
-        values: [[timestamp]],
-      });
+      // V already added above — no duplicate
       updates.push({
         range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
         values: [["Not Interested"]],
@@ -363,7 +363,7 @@ router.post("/update", async (req, res) => {
     } else if (status === "Call Not Picked") {
       loggerStatus = "Call Not Picked";
 
-      // ✅ CNP — auto +7 days to planned date
+      // CNP — auto +7 days to planned date
       let existingPlannedDate = "";
       try {
         const pd = await req.sheets.spreadsheets.values.get({
@@ -384,19 +384,15 @@ router.post("/update", async (req, res) => {
         values: [["Call Not Picked"]],
       });
     } else {
-      // ✅ Done
+      // Done
       loggerStatus = status || "Done";
-
-      updates.push({
-        range: `'${NBD_SHEET_NAME}'!V${rowIndex}`,
-        values: [[timestamp]],
-      });
+      // V already added above
       updates.push({
         range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
         values: [[status || "Done"]],
       });
 
-      // ✅ FSR users अपना code AN column में लिखते हैं
+      // FSR code in AN column
       if (req.user) {
         const fsrCode = getFSRCode(req.user);
         if (fsrCode) {
@@ -408,7 +404,7 @@ router.post("/update", async (req, res) => {
       }
     }
 
-    // ✅ Remarks — timestamp के साथ append
+    // Remarks — timestamp ke saath append
     if (remarks && String(remarks).trim() !== "") {
       const appended = await buildAppendedRemarks(
         req.sheets,
@@ -428,19 +424,16 @@ router.post("/update", async (req, res) => {
       requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
 
-    // ✅ FIX: Logger में सही status — loggerStatus use करो, "Done" नहीं
     if (leadInfo)
       await appendToLogger(
         req.sheets,
         leadInfo,
         "Step 2 - Field Visit",
-        loggerStatus, // ✅ यही fix है
+        loggerStatus,
         remarks || "",
         req.user?.email,
       );
 
-    // ✅ Response message
-    // ✅ Response message
     let responseMessage = "Field Visit Done";
     if (rescheduleDate) {
       if (actionType === "cold") {

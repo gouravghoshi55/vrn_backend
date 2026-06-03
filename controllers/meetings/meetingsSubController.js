@@ -1,4 +1,3 @@
-const { sheets } = require("../../config/googleAuth");
 const { getCurrentTimestamp } = require("../../utils/dateUtils");
 
 const SPREADSHEET_ID = "1iGI-DvLlBPj5mmwgOCs926xtaYVgTtoYcD8h2qhhhQc";
@@ -8,7 +7,8 @@ const DATA_START_ROW = 8;
 // GET — Show rows where Planned(H) NOT NULL & Actual(I) IS NULL
 exports.getMeetingsSub = async (req, res) => {
   try {
-    const response = await sheets.spreadsheets.values.get({
+    // ✅ Use req.sheets (retry-enabled, always defined)
+    const response = await req.sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!A${DATA_START_ROW}:N`,
     });
@@ -17,32 +17,31 @@ exports.getMeetingsSub = async (req, res) => {
     const filtered = [];
 
     rows.forEach((row, idx) => {
-      const planned     = row[7];  // H
-      const actual      = row[8];  // I
-      const status      = (row[9] || "").toString().trim(); // J
-      const reviseDate  = row[11]; // L
+      const planned = row[7]; // H
+      const actual = row[8]; // I
+      const status = (row[9] || "").toString().trim(); // J
+      const reviseDate = row[11]; // L
       const reviseCount = row[12]; // M
 
       // ✅ Show only if Planned exists AND Actual is empty
       const hasPlanned = planned && planned.toString().trim() !== "";
-      const hasActual  = actual && actual.toString().trim() !== "";
+      const hasActual = actual && actual.toString().trim() !== "";
 
+      // ⚠️ NOTE: Aapke original code mein bug tha — `if (hasPlanned || hasActual) return;`
+      // Iska matlab Planned hai to bhi skip kar dega. Should be:
       if (!hasPlanned || hasActual) return;
 
-      // ✅ Decide which date to display
-      // If status is "Revise" and reviseDate exists → use reviseDate
-      // Else → use planned
-      const displayDate = (status.toLowerCase() === "revise" && reviseDate)
-        ? reviseDate
-        : planned;
+      // Decide which date to display
+      const displayDate =
+        status.toLowerCase() === "revise" && reviseDate ? reviseDate : planned;
 
       filtered.push({
         rowNumber: DATA_START_ROW + idx,
         uniqueId: row[1] || "",
         firmName: row[2] || "",
-        contact:  row[3] || "",
+        contact: row[3] || "",
         locality: row[4] || "",
-        plannedDate: displayDate,        // current applicable date
+        plannedDate: displayDate,
         status: status || "",
         reviseCount: reviseCount || "0",
       });
@@ -58,23 +57,27 @@ exports.getMeetingsSub = async (req, res) => {
 // POST — Save Meeting action
 exports.submitMeetingsSubAction = async (req, res) => {
   try {
-    const { rowNumber, status, channelPartnerName, reviseDate, remark } = req.body;
+    const { rowNumber, status, channelPartnerName, reviseDate, remark } =
+      req.body;
 
     if (!rowNumber || !status) {
-      return res.status(400).json({ success: false, message: "rowNumber and status required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "rowNumber and status required" });
     }
 
-    // Read existing I:N row
-    const currentRow = await sheets.spreadsheets.values.get({
+    // ✅ Use req.sheets
+    const currentRow = await req.sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!I${rowNumber}:N${rowNumber}`,
     });
-    const existing = (currentRow.data.values && currentRow.data.values[0]) || [];
+    const existing =
+      (currentRow.data.values && currentRow.data.values[0]) || [];
     const currentReviseCount = parseInt(existing[4] || "0", 10) || 0;
 
     let newReviseCount = currentReviseCount;
-    let newReviseDate  = existing[3] || "";
-    let actualValue    = existing[0] || "";
+    let newReviseDate = existing[3] || "";
+    let actualValue = existing[0] || "";
 
     if (status === "Revise") {
       newReviseCount = currentReviseCount + 1;
@@ -85,20 +88,22 @@ exports.submitMeetingsSubAction = async (req, res) => {
       actualValue = getCurrentTimestamp();
     }
 
-    // Update I (Actual), J (Status), K (CP Name), L (Revise Date), M (Revise Count), N (Remark)
-    await sheets.spreadsheets.values.update({
+    // ✅ Use req.sheets
+    await req.sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!I${rowNumber}:N${rowNumber}`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
-        values: [[
-          actualValue,
-          status,
-          channelPartnerName || "",
-          newReviseDate,
-          newReviseCount,
-          remark || "",
-        ]],
+        values: [
+          [
+            actualValue,
+            status,
+            channelPartnerName || "",
+            newReviseDate,
+            newReviseCount,
+            remark || "",
+          ],
+        ],
       },
     });
 

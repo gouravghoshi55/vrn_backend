@@ -1,4 +1,3 @@
-const { sheets } = require("../../config/googleAuth");
 const { getCurrentTimestamp } = require("../../utils/dateUtils");
 const { uploadPdfToDrive } = require("../../services/googleDriveService");
 
@@ -20,10 +19,11 @@ function formatPlannedDateTime(dateStr) {
 // GET — Show pending rows
 exports.getAgreementData = async (req, res) => {
   try {
-    const response = await sheets.spreadsheets.values.get({
+    // ✅ Use req.sheets (retry-enabled)
+    const response = await req.sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!A${DATA_START_ROW}:W`,
-      valueRenderOption: "FORMATTED_VALUE", // ensure formula results come as text
+      valueRenderOption: "FORMATTED_VALUE",
       dateTimeRenderOption: "FORMATTED_STRING",
     });
 
@@ -31,31 +31,18 @@ exports.getAgreementData = async (req, res) => {
     const filtered = [];
 
     rows.forEach((row, idx) => {
-      // ✅ Safely read cells (avoid undefined from trailing empty cells)
       const plannedP = (row[15] || "").toString().trim(); // P
       const actual = (row[16] || "").toString().trim(); // Q
       const status = (row[17] || "").toString().trim(); // R
       const nextFollowW = (row[22] || "").toString().trim(); // W
 
-      // const rowNum = DATA_START_ROW + idx;
-      // console.log(`Row ${rowNum}:`, {
-      //   P: row[15],
-      //   Q: row[16],
-      //   R: row[17],
-      //   W: row[22],
-      //   rowLength: row.length,
-      // });
-
-      // ✅ Decide effective planned date
       let effectivePlanned = "";
       if (status === "Next Followup Required") {
-        // Prefer W; fallback to P if W not yet filled
         effectivePlanned = nextFollowW || plannedP;
       } else {
         effectivePlanned = plannedP;
       }
 
-      // ✅ Show if planned exists AND actual empty
       if (effectivePlanned !== "" && actual === "") {
         filtered.push({
           rowNumber: DATA_START_ROW + idx,
@@ -105,7 +92,8 @@ exports.submitAgreementAction = async (req, res) => {
 
       const formattedDate = formatPlannedDateTime(nextPlannedDate);
 
-      await sheets.spreadsheets.values.batchUpdate({
+      // ✅ Use req.sheets
+      await req.sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
         requestBody: {
           valueInputOption: "USER_ENTERED",
@@ -141,7 +129,8 @@ exports.submitAgreementAction = async (req, res) => {
 
     const actualValue = status === "Done" ? getCurrentTimestamp() : "";
 
-    await sheets.spreadsheets.values.update({
+    // ✅ Use req.sheets
+    await req.sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!Q${rowNumber}:V${rowNumber}`,
       valueInputOption: "USER_ENTERED",

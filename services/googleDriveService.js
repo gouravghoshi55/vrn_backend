@@ -1,13 +1,17 @@
-const { drive } = require("../config/googleAuth");
+const { getDrive } = require("../config/googleAuth");
 const { Readable } = require("stream");
 
-// ✅ Naya Folder ID update kar diya
 const FOLDER_ID = "0ACYEbp3qizyBUk9PVA";
 
 async function uploadPdfToDrive(fileBuffer, fileName) {
   try {
     console.log("📤 Uploading to Drive Folder:", FOLDER_ID);
     console.log("File Name:", fileName);
+
+    // ✅ MUST await — getDrive is async now
+    const drive = await getDrive();
+
+    console.log("🔧 Drive client ready, has files:", !!drive?.files);
 
     const bufferStream = new Readable();
     bufferStream.push(fileBuffer);
@@ -24,24 +28,22 @@ async function uploadPdfToDrive(fileBuffer, fileName) {
         body: bufferStream,
       },
       fields: "id, webViewLink",
-      supportsAllDrives: true,   // ✅ Shared Drive support ke liye zaroori
+      supportsAllDrives: true,
     });
 
     console.log("✅ File uploaded successfully. ID:", response.data.id);
 
-    // Link ko public (anyone with link can view) banane ke liye permission add kar rahe hain
     await drive.permissions.create({
       fileId: response.data.id,
       requestBody: { role: "reader", type: "anyone" },
-      supportsAllDrives: true,   // ✅
+      supportsAllDrives: true,
     });
 
-    console.log("✅ Shareable link generated:", response.data.webViewLink);
+    console.log("✅ Shareable link:", response.data.webViewLink);
     return response.data.webViewLink;
-
   } catch (err) {
     console.error("❌ Drive upload error:", err.message);
-    console.error("Full error details:", err.errors || err);
+    console.error("Full error:", err.errors || err);
     throw err;
   }
 }

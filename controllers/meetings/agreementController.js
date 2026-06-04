@@ -66,6 +66,20 @@ exports.getAgreementData = async (req, res) => {
 // POST — Save Agreement action
 exports.submitAgreementAction = async (req, res) => {
   try {
+    // ✅ Debug logging — helps trace future issues
+    console.log("📄 [Agreement] req.body:", req.body);
+    console.log(
+      "📄 [Agreement] req.file:",
+      req.file
+        ? {
+            fieldname: req.file.fieldname,
+            originalname: req.file.originalname,
+            size: req.file.size,
+            mimetype: req.file.mimetype,
+          }
+        : "NO FILE",
+    );
+
     const {
       rowNumber,
       status,
@@ -92,7 +106,6 @@ exports.submitAgreementAction = async (req, res) => {
 
       const formattedDate = formatPlannedDateTime(nextPlannedDate);
 
-      // ✅ Use req.sheets
       await req.sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: SPREADSHEET_ID,
         requestBody: {
@@ -122,14 +135,21 @@ exports.submitAgreementAction = async (req, res) => {
 
     // ✅ Done / other status flow
     let pdfLink = "";
-    if (req.file) {
+    if (req.file && req.file.buffer) {
       const fileName = `Agreement_${rowNumber}_${Date.now()}.pdf`;
-      pdfLink = await uploadPdfToDrive(req.file.buffer, fileName);
+      try {
+        pdfLink = await uploadPdfToDrive(req.file.buffer, fileName);
+        console.log("✅ PDF uploaded successfully:", pdfLink);
+      } catch (uploadErr) {
+        console.error("❌ PDF upload failed:", uploadErr.message);
+        // Continue without PDF — don't fail entire request
+        // OR uncomment below to fail hard:
+        // return res.status(500).json({ success: false, message: "PDF upload failed: " + uploadErr.message });
+      }
     }
 
     const actualValue = status === "Done" ? getCurrentTimestamp() : "";
 
-    // ✅ Use req.sheets
     await req.sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!Q${rowNumber}:V${rowNumber}`,

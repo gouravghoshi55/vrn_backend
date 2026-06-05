@@ -69,6 +69,7 @@ function getDoerTag(user) {
     "bdm1@company.com": "BDM1",
     "bdm2@company.com": "BDM2",
     "bdm6@company.com": "BDM6",
+    "bdm7@company.com": "BDM7",
     "varun@company.com": "Varun Sir",
     "mohan@company.com": "Mohan Sir",
   };
@@ -392,7 +393,7 @@ router.post("/nbdin/assign", async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing fields" });
 
     // ✅ Varun Sir and Mohan Sir added to allowed list
-    if (!["BDM1", "BDM2", "BDM6", "Varun Sir", "Mohan Sir"].includes(assignTo))
+    if (!["BDM1", "BDM2", "BDM6", "BDM7", "Varun Sir", "Mohan Sir"].includes(assignTo))
       return res
         .status(400)
         .json({ success: false, error: "Invalid assignTo" });

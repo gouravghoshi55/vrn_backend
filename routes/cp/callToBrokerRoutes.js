@@ -86,8 +86,10 @@ router.get("/list", async (req, res) => {
       const actualDate = g(7);
       const status = g(8);
 
-      // ✅ Show lead when: planned exists + no actual, OR status = "Call Again"
-      const showRow = (plannedDate && !actualDate) || status === "Call Again";
+      const showRow =
+        (plannedDate && !actualDate) ||
+        status === "Call Again" ||
+        status === "No Connection";
 
       if (!showRow) return;
 
@@ -163,8 +165,9 @@ router.post("/update", async (req, res) => {
     });
 
     // ✅ Actual Date logic — ALWAYS runs regardless of nextFollowUpDate
-    if (status === "Call Again") {
-      // Call Again: clear actual so lead shows again with new planned date
+    // ✅ Actual Date logic — ALWAYS runs regardless of nextFollowUpDate
+    if (status === "Call Again" || status === "No Connection") {
+      // Call Again / No Connection: clear actual so lead shows again with new planned date
       updates.push({
         range: `'${SHEET_NAME}'!H${rowIndex}`,
         values: [[""]],
@@ -174,6 +177,28 @@ router.post("/update", async (req, res) => {
       updates.push({
         range: `'${SHEET_NAME}'!H${rowIndex}`,
         values: [[timestamp]],
+      });
+    }
+
+    // ✅ NEW: No Connection — auto +15 days planned date
+    if (status === "No Connection") {
+      // Generate date 15 days from now at 10:00 AM IST
+      const futureDate = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
+      futureDate.setUTCDate(futureDate.getUTCDate() + 15);
+
+      const dd = String(futureDate.getUTCDate()).padStart(2, "0");
+      const mm = String(futureDate.getUTCMonth() + 1).padStart(2, "0");
+      const yyyy = futureDate.getUTCFullYear();
+      const noConnectionDate = `${dd}/${mm}/${yyyy} 10:00:00`;
+
+      // Write to BOTH G (Planned) and J (Next Follow Up) for consistency
+      updates.push({
+        range: `'${SHEET_NAME}'!G${rowIndex}`,
+        values: [[noConnectionDate]],
+      });
+      updates.push({
+        range: `'${SHEET_NAME}'!J${rowIndex}`,
+        values: [[noConnectionDate]],
       });
     }
 
@@ -230,7 +255,7 @@ router.post("/update", async (req, res) => {
     }
 
     // ✅ Follow Up Counter (Col O, index 14) — +1 only when "Call Again"
-    if (status === "Call Again") {
+    if (status === "Call Again" || status === "No Connection") {
       let currentCount = 0;
       try {
         const cr = await req.sheets.spreadsheets.values.get({
@@ -253,7 +278,6 @@ router.post("/update", async (req, res) => {
       });
     }
 
-    console.log("📝 Updates being sent:", JSON.stringify(updates, null, 2));
 
     // Batch update
     await req.sheets.spreadsheets.values.batchUpdate({
@@ -266,9 +290,11 @@ router.post("/update", async (req, res) => {
       message:
         status === "Call Again"
           ? "Follow-up scheduled"
-          : status === "Agreed to next meeting"
-            ? "Meeting scheduled"
-            : `Marked as ${status}`,
+          : status === "No Connection"
+            ? "Marked No Connection — Next call after 15 days"
+            : status === "Agreed to next meeting"
+              ? "Meeting scheduled"
+              : `Marked as ${status}`,
     });
   } catch (error) {
     console.error("❌ Error updating Call to Broker:", error.message);

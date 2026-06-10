@@ -11,58 +11,67 @@ const CP_LEAD_SHEET = "Channel Partner Lead FMS";
 // ============================================
 
 function detectLeadStep(row) {
-  // Helper to get column value safely
   const getCol = (index) => (row[index] ? row[index].trim() : "");
 
-  // Basic Lead Info
-  const uniqueId = getCol(1);       // B
-  const customerName = getCol(2);   // C
-  const customerContact = getCol(3); // D
-  const projectSelection = getCol(5); // F
-  const leadSource = getCol(6);     // G
+  const uniqueId = getCol(1);
+  const customerName = getCol(2);
+  const customerContact = getCol(3);
+  const projectSelection = getCol(5);
+  const leadSource = getCol(6);
 
-  // Step 1: First Follow Up - Column O (index 14)
+  // Step 1: First Follow Up - Column O (14)
   const step1Status = getCol(14);
-  const isInStep1 = step1Status === "" || 
-                    step1Status.toLowerCase() === "no conversation" || 
-                    step1Status.toLowerCase() === "next follow up";
+  const isInStep1 =
+    step1Status === "" ||
+    step1Status.toLowerCase() === "no conversation" ||
+    step1Status.toLowerCase() === "next follow up";
 
-  // Step 2: Site Visit - Planned on Column U (index 20), Status on Column W (index 22)
+  // Step 2: Site Visit
   const step2PlannedDate = getCol(20);
   const step2Status = getCol(22);
-  const isInStep2 = step2PlannedDate && 
-                    (step2Status === "" || 
-                     step2Status.toLowerCase() === "pending" ||
-                     step2Status.toLowerCase() === "rescheduled");
+  const step2StatusLower = step2Status.toLowerCase();
 
-  // Step 3: After Site Visit Follow Up
-  // Planned: AA (26), Actual: AB (27), Status: AC (28)
+  // ✅ NEW: CNP detection
+  const isInCNP = step2StatusLower === "call not picked";
+
+  const isInStep2 =
+    step2PlannedDate &&
+    (step2Status === "" ||
+      step2StatusLower === "pending" ||
+      step2StatusLower === "rescheduled" ||
+      step2StatusLower === "next followup required" ||
+      step2StatusLower === "cold");
+
+  // Step 3
   const step3PlannedDate = getCol(26);
   const step3ActualDate = getCol(27);
   const step3Status = getCol(28);
   const step3StatusLower = step3Status.toLowerCase();
-  const isInStep3 = (step3PlannedDate && !step3ActualDate) || 
-                    step3StatusLower === "no conversation" || 
-                    step3StatusLower === "next follow up" ||
-                    step3StatusLower === "next field visit required";
+  const isInStep3 =
+    (step3PlannedDate && !step3ActualDate) ||
+    step3StatusLower === "no conversation" ||
+    step3StatusLower === "next follow up" ||
+    step3StatusLower === "next field visit required";
 
-  // Step 4: Meeting
-  // Planned: AH (33), Actual: AI (34), Status: AJ (35)
+  // Step 4
   const step4PlannedDate = getCol(33);
   const step4ActualDate = getCol(34);
   const step4Status = getCol(35);
   const step4StatusLower = step4Status.toLowerCase();
-  const isInStep4 = step4PlannedDate && 
-                    (!step4Status || 
-                     step4StatusLower === "rescheduled" || 
-                     step4StatusLower === "next field visit required");
+  const isInStep4 =
+    step4PlannedDate &&
+    (!step4Status ||
+      step4StatusLower === "rescheduled" ||
+      step4StatusLower === "next field visit required");
 
   // Step 5: Booking
-  // Planned: AM (38)
   const step5PlannedDate = getCol(38);
   const isInStep5 = step5PlannedDate !== "";
 
-  // Determine current step (check from highest to lowest)
+  // ✅ NEW: CP Can/Cannot Contact (Col AM = index 38)
+  const cpCanContactFlag = getCol(38); // "Yes" or "No" in CP sheet
+  const canContact = cpCanContactFlag === "No" ? "No" : "Yes";
+
   let currentStep = null;
   let stepName = "";
   let stepStatus = "";
@@ -70,52 +79,64 @@ function detectLeadStep(row) {
   let stepColor = "";
   let stepIcon = "";
 
-if (isInStep1) {
-  currentStep = 1;
-  stepName = "First Follow-Up";
-  stepStatus = step1Status || "Pending";
-  stepPlannedDate = "";
-  stepColor = "#3b82f6"; // Blue
-  stepIcon = "bi-telephone-fill";
-} else if (isInStep2) {
-  currentStep = 2;
-  stepName = "Site Visit";
-  stepStatus = step2Status || "Pending";
-  stepPlannedDate = step2PlannedDate;
-  stepColor = "#ec4899"; // Pink
-  stepIcon = "bi-geo-alt-fill";
-} else if (isInStep3) {
-  currentStep = 3;
-  stepName = "After Site Visit Follow-Up";
-  stepStatus = step3Status || "Pending";
-  stepPlannedDate = step3PlannedDate;
-  stepColor = "#f59e0b"; // Orange
-  stepIcon = "bi-chat-dots-fill";
-} else if (isInStep4) {
-  currentStep = 4;
-  stepName = "Meeting";
-  stepStatus = step4Status || "Pending";
-  stepPlannedDate = step4PlannedDate;
-  stepColor = "#8b5cf6"; // Purple
-  stepIcon = "bi-calendar-check-fill";
-} else if (isInStep5) {
-  currentStep = 5;
-  stepName = "Booking";
-  stepStatus = "Booking Pending";
-  stepPlannedDate = step5PlannedDate;
-  stepColor = "#10b981"; // Green
-  stepIcon = "bi-check-circle-fill";
-}
+  // ✅ Priority: CNP first (sub-state of Step 2)
+  if (isInCNP) {
+    currentStep = 2;
+    stepName = "Call Not Picked (CNP)";
+    stepStatus = "Call Not Picked";
+    stepPlannedDate = step2PlannedDate;
+    stepColor = "#0891b2"; // Cyan
+    stepIcon = "bi-telephone-x-fill";
+  } else if (isInStep1) {
+    currentStep = 1;
+    stepName = "First Follow-Up";
+    stepStatus = step1Status || "Pending";
+    stepPlannedDate = "";
+    stepColor = "#3b82f6";
+    stepIcon = "bi-telephone-fill";
+  } else if (isInStep2) {
+    currentStep = 2;
+    stepName = "Site Visit";
+    stepStatus = step2Status || "Pending";
+    stepPlannedDate = step2PlannedDate;
+    stepColor = "#ec4899";
+    stepIcon = "bi-geo-alt-fill";
+  } else if (isInStep3) {
+    currentStep = 3;
+    stepName = "After Site Visit Follow-Up";
+    stepStatus = step3Status || "Pending";
+    stepPlannedDate = step3PlannedDate;
+    stepColor = "#f59e0b";
+    stepIcon = "bi-chat-dots-fill";
+  } else if (isInStep4) {
+    currentStep = 4;
+    stepName = "Meeting";
+    stepStatus = step4Status || "Pending";
+    stepPlannedDate = step4PlannedDate;
+    stepColor = "#8b5cf6";
+    stepIcon = "bi-calendar-check-fill";
+  } else if (isInStep5) {
+    currentStep = 5;
+    stepName = "Booking";
+    stepStatus = "Booking Pending";
+    stepPlannedDate = step5PlannedDate;
+    stepColor = "#10b981";
+    stepIcon = "bi-check-circle-fill";
+  }
 
-  // Check if lead is completed/closed
-  const finalStatuses = ["done", "not interested", "negotiation failed", "deal not done", "booked"];
-  
-  // Check Step 4 status for completion
+  // Completed check
+  const finalStatuses = [
+    "done",
+    "not interested",
+    "negotiation failed",
+    "deal not done",
+    "booked",
+  ];
   if (step4StatusLower && finalStatuses.includes(step4StatusLower)) {
     currentStep = 0;
     stepName = "Completed/Closed";
     stepStatus = step4Status;
-    stepColor = "#6b7280"; // Gray
+    stepColor = "#6b7280";
     stepIcon = "bi-check-all";
   }
 
@@ -131,6 +152,7 @@ if (isInStep1) {
     stepPlannedDate,
     stepColor,
     stepIcon,
+    canContact, // ✅ NEW
   };
 }
 

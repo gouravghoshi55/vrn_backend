@@ -6,6 +6,10 @@ const NBD_SHEET_NAME = "END USER LEADS FMS";
 const LOGGER_SHEET_NAME = "Logger";
 const NOT_INTERESTED_SHEET = "Not Interested Reasons";
 
+// ============================================
+// Helper Functions
+// ============================================
+
 function getCurrentTimestamp() {
   const now = new Date();
   const d = String(now.getDate()).padStart(2, "0"),
@@ -53,7 +57,6 @@ function parseDate(dateStr) {
   return new Date(dateStr);
 }
 
-// ✅ Varun Sir and Mohan Sir added
 function getDoerTag(user) {
   if (!user) return null;
   if (user.role === "admin" || user.assignedModule === "all") return null;
@@ -235,7 +238,7 @@ router.post("/update", async (req, res) => {
     const updates = [];
     const timestamp = getCurrentTimestamp();
 
-    // Increment followup count
+    // ✅ Increment followup count (Z column)
     let currentFollowupCount = 0;
     try {
       const cr = await req.sheets.spreadsheets.values.get({
@@ -250,18 +253,25 @@ router.post("/update", async (req, res) => {
       values: [[newFollowupCount]],
     });
 
+    // ✅ Always write Actual Date (V column) — every action logs timestamp
+    updates.push({
+      range: `'${NBD_SHEET_NAME}'!V${rowIndex}`,
+      values: [[timestamp]],
+    });
+
     let logStep = "CNP";
     let logStatus = "";
     let responseMessage = "";
 
+    // ============================================
+    // ACTION HANDLERS
+    // ============================================
     if (action === "schedule") {
       if (!fieldVisitDate) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            error: "fieldVisitDate required for schedule action",
-          });
+        return res.status(400).json({
+          success: false,
+          error: "fieldVisitDate required for schedule action",
+        });
       }
       updates.push({
         range: `'${NBD_SHEET_NAME}'!U${rowIndex}`,
@@ -276,17 +286,11 @@ router.post("/update", async (req, res) => {
       responseMessage = "Site Visit scheduled — lead moved to Field Visit";
     } else if (action === "not-interested") {
       if (!notInterestedReason || !String(notInterestedReason).trim()) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            error: "Reason required for Not Interested",
-          });
+        return res.status(400).json({
+          success: false,
+          error: "Reason required for Not Interested",
+        });
       }
-      updates.push({
-        range: `'${NBD_SHEET_NAME}'!V${rowIndex}`,
-        values: [[timestamp]],
-      });
       updates.push({
         range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
         values: [["Not Interested"]],
@@ -305,12 +309,10 @@ router.post("/update", async (req, res) => {
       responseMessage = "Lead marked Not Interested";
     } else if (action === "cnp-again") {
       if (!nextFollowUpDate) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            error: "nextFollowUpDate required for cnp-again action",
-          });
+        return res.status(400).json({
+          success: false,
+          error: "nextFollowUpDate required for cnp-again action",
+        });
       }
       updates.push({
         range: `'${NBD_SHEET_NAME}'!U${rowIndex}`,
@@ -325,12 +327,10 @@ router.post("/update", async (req, res) => {
       responseMessage = "Lead updated — next follow-up scheduled";
     } else if (action === "next-followup") {
       if (!nextFollowUpDate) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            error: "nextFollowUpDate required for next-followup action",
-          });
+        return res.status(400).json({
+          success: false,
+          error: "nextFollowUpDate required for next-followup action",
+        });
       }
       updates.push({
         range: `'${NBD_SHEET_NAME}'!U${rowIndex}`,
@@ -344,16 +344,14 @@ router.post("/update", async (req, res) => {
       logStatus = "Call Not Picked";
       responseMessage = "Next follow-up scheduled — lead stays in CNP";
     } else {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error:
-            "Invalid action. Use: schedule, not-interested, cnp-again, next-followup",
-        });
+      return res.status(400).json({
+        success: false,
+        error:
+          "Invalid action. Use: schedule, not-interested, cnp-again, next-followup",
+      });
     }
 
-    // Append remarks
+    // ✅ Append remarks with timestamp
     if (remarks && String(remarks).trim() !== "") {
       const appended = await buildAppendedRemarks(
         req.sheets,
@@ -368,13 +366,13 @@ router.post("/update", async (req, res) => {
         });
     }
 
-    // Batch update
+    // ✅ Batch update
     await req.sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: { valueInputOption: "USER_ENTERED", data: updates },
     });
 
-    // Logger
+    // ✅ Logger
     if (leadInfo) {
       await appendToLogger(
         req.sheets,

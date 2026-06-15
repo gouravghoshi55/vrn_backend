@@ -52,7 +52,7 @@ function getDoerTag(user) {
     "bdm6@company.com": "BDM6",
     "varun@company.com": "Varun Sir",
     "mohan@company.com": "Mohan Sir",
-     "bdm7@company.com": "BDM7",
+    "bdm7@company.com": "BDM7",
   };
   return m[user.email?.toLowerCase()] || null;
 }

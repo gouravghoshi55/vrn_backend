@@ -5,6 +5,10 @@ const SPREADSHEET_ID = "1iGI-DvLlBPj5mmwgOCs926xtaYVgTtoYcD8h2qhhhQc";
 const SHEET_NAME = "FMS";
 const DATA_START_ROW = 8;
 
+// ✅ NEW — NI logging in main working sheet
+const MAIN_SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const NOT_INTERESTED_SHEET = "Not Interested Reasons";
+
 function formatPlannedDateTime(dateStr) {
   if (!dateStr) return "";
   if (dateStr.includes("T")) {
@@ -16,10 +20,9 @@ function formatPlannedDateTime(dateStr) {
   return dateStr;
 }
 
-// GET — Show pending rows
+// GET — Show pending rows (unchanged)
 exports.getAgreementData = async (req, res) => {
   try {
-    // ✅ Use req.sheets (retry-enabled)
     const response = await req.sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!A${DATA_START_ROW}:W`,
@@ -31,10 +34,10 @@ exports.getAgreementData = async (req, res) => {
     const filtered = [];
 
     rows.forEach((row, idx) => {
-      const plannedP = (row[15] || "").toString().trim(); // P
-      const actual = (row[16] || "").toString().trim(); // Q
-      const status = (row[17] || "").toString().trim(); // R
-      const nextFollowW = (row[22] || "").toString().trim(); // W
+      const plannedP = (row[15] || "").toString().trim();
+      const actual = (row[16] || "").toString().trim();
+      const status = (row[17] || "").toString().trim();
+      const nextFollowW = (row[22] || "").toString().trim();
 
       let effectivePlanned = "";
       if (status === "Next Followup Required") {
@@ -66,7 +69,6 @@ exports.getAgreementData = async (req, res) => {
 // POST — Save Agreement action
 exports.submitAgreementAction = async (req, res) => {
   try {
-    // ✅ Debug logging — helps trace future issues
     console.log("📄 [Agreement] req.body:", req.body);
     console.log(
       "📄 [Agreement] req.file:",
@@ -87,6 +89,8 @@ exports.submitAgreementAction = async (req, res) => {
       contactInOffice,
       remark,
       nextPlannedDate,
+      notInterestedReason, // ✅ NEW
+      leadInfo,            // ✅ NEW (may come as string when FormData)
     } = req.body;
 
     if (!rowNumber || !status) {
@@ -95,7 +99,18 @@ exports.submitAgreementAction = async (req, res) => {
         .json({ success: false, message: "rowNumber and status required" });
     }
 
-    // ✅ Next Followup Required → write to W (not P)
+    // ✅ Parse leadInfo if sent as JSON string (FormData scenario)
+    let parsedLeadInfo = {};
+    try {
+      parsedLeadInfo =
+        typeof leadInfo === "string" ? JSON.parse(leadInfo) : leadInfo || {};
+    } catch {
+      parsedLeadInfo = {};
+    }
+
+    // ============================================
+    // ✅ NEXT FOLLOWUP REQUIRED FLOW
+    // ============================================
     if (status === "Next Followup Required") {
       if (!nextPlannedDate) {
         return res.status(400).json({
@@ -133,7 +148,82 @@ exports.submitAgreementAction = async (req, res) => {
       });
     }
 
-    // ✅ Done / other status flow
+    // ============================================
+    // ✅ NOT INTERESTED FLOW (NEW)
+    // ============================================
+    if (status === "Not Interested") {
+      if (!notInterestedReason?.trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Reason required for Not Interested",
+        });
+      }
+
+      const timestamp = getCurrentTimestamp();
+
+      // Build final remark with reason
+      const finalRemark = `${remark || ""}${remark ? " | " : ""}Reason: ${notInterestedReason}`;
+
+      // Update Q (timestamp), R (status), V (remark+reason)
+      await req.sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          valueInputOption: "USER_ENTERED",
+          data: [
+            {
+              range: `${SHEET_NAME}!Q${rowNumber}:R${rowNumber}`,
+              values: [[timestamp, "Not Interested"]],
+            },
+            {
+              range: `${SHEET_NAME}!V${rowNumber}`,
+              values: [[finalRemark]],
+            },
+          ],
+        },
+      });
+
+      // ✅ Log to Not Interested Reasons sheet
+      try {
+        const ts = getCurrentTimestamp();
+        await req.sheets.spreadsheets.values.append({
+          spreadsheetId: MAIN_SPREADSHEET_ID,
+          range: `'${NOT_INTERESTED_SHEET}'!A:K`,
+          valueInputOption: "USER_ENTERED",
+          insertDataOption: "INSERT_ROWS",
+          requestBody: {
+            values: [
+              [
+                ts,
+                "Agreement - Not Interested",
+                parsedLeadInfo.uniqueId || "",
+                parsedLeadInfo.firmName || "",
+                parsedLeadInfo.contact || "",
+                parsedLeadInfo.locality || "",
+                "", // project
+                "", // leadSource
+                "", // CP name (N/A)
+                notInterestedReason,
+                req.user?.email || "",
+              ],
+            ],
+          },
+        });
+        console.log(
+          `✅ Agreement NI logged: ${parsedLeadInfo.uniqueId} - ${parsedLeadInfo.firmName}`,
+        );
+      } catch (logErr) {
+        console.warn("⚠️ NI log failed:", logErr.message);
+      }
+
+      return res.json({
+        success: true,
+        message: "Marked Not Interested — logged to NI sheet",
+      });
+    }
+
+    // ============================================
+    // ✅ DONE FLOW (existing — with PDF)
+    // ============================================
     let pdfLink = "";
     if (req.file && req.file.buffer) {
       const fileName = `Agreement_${rowNumber}_${Date.now()}.pdf`;
@@ -142,9 +232,6 @@ exports.submitAgreementAction = async (req, res) => {
         console.log("✅ PDF uploaded successfully:", pdfLink);
       } catch (uploadErr) {
         console.error("❌ PDF upload failed:", uploadErr.message);
-        // Continue without PDF — don't fail entire request
-        // OR uncomment below to fail hard:
-        // return res.status(500).json({ success: false, message: "PDF upload failed: " + uploadErr.message });
       }
     }
 

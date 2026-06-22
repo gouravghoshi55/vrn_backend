@@ -4,12 +4,37 @@ const SPREADSHEET_ID = "1iGI-DvLlBPj5mmwgOCs926xtaYVgTtoYcD8h2qhhhQc";
 const SHEET_NAME = "FMS";
 const DATA_START_ROW = 8;
 
-// ✅ NEW — Not Interested logging goes to main working sheet
 const MAIN_SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const NOT_INTERESTED_SHEET = "Not Interested Reasons";
 
+// ✅ NEW — Short timestamp for remarks: [DD/MM/YYYY HH:MM]
+function getShortTimestamp() {
+  const now = new Date();
+  const d  = String(now.getDate()).padStart(2, "0");
+  const mo = String(now.getMonth() + 1).padStart(2, "0");
+  const y  = now.getFullYear();
+  const h  = String(now.getHours()).padStart(2, "0");
+  const mi = String(now.getMinutes()).padStart(2, "0");
+  return `[${d}/${mo}/${y} ${h}:${mi}]`;
+}
+
+// ✅ NEW — Append remark with timestamp (read existing first)
+async function buildAppendedRemarks(sheets, cellRange, newRemark) {
+  if (!newRemark || !String(newRemark).trim()) return null;
+  let existing = "";
+  try {
+    const r = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!${cellRange}`,
+    });
+    existing = r.data.values?.[0]?.[0] || "";
+  } catch (e) {}
+  const timestamped = `${getShortTimestamp()} ${String(newRemark).trim()}`;
+  return existing.trim() ? `${existing.trim()}\n${timestamped}` : timestamped;
+}
+
 // ============================================
-// GET — Show rows where Planned(H) NOT NULL & Actual(I) IS NULL
+// GET — Show pending rows
 // ============================================
 exports.getMeetingsSub = async (req, res) => {
   try {
@@ -22,14 +47,15 @@ exports.getMeetingsSub = async (req, res) => {
     const filtered = [];
 
     rows.forEach((row, idx) => {
-      const planned = row[7]; // H
-      const actual = row[8]; // I
-      const status = (row[9] || "").toString().trim(); // J
-      const reviseDate = row[11]; // L
-      const reviseCount = row[12]; // M
+      const planned     = row[7];   // H
+      const actual      = row[8];   // I
+      const status      = (row[9] || "").toString().trim();  // J
+      const reviseDate  = row[11];  // L
+      const reviseCount = row[12];  // M
+      const remark      = row[13] || ""; // ✅ NEW — N (Remark)
 
       const hasPlanned = planned && planned.toString().trim() !== "";
-      const hasActual = actual && actual.toString().trim() !== "";
+      const hasActual  = actual && actual.toString().trim() !== "";
 
       if (!hasPlanned || hasActual) return;
 
@@ -37,14 +63,15 @@ exports.getMeetingsSub = async (req, res) => {
         status.toLowerCase() === "revise" && reviseDate ? reviseDate : planned;
 
       filtered.push({
-        rowNumber: DATA_START_ROW + idx,
-        uniqueId: row[1] || "",
-        firmName: row[2] || "",
-        contact: row[3] || "",
-        locality: row[4] || "",
+        rowNumber:   DATA_START_ROW + idx,
+        uniqueId:    row[1] || "",
+        firmName:    row[2] || "",
+        contact:     row[3] || "",
+        locality:    row[4] || "",
         plannedDate: displayDate,
-        status: status || "",
+        status:      status || "",
         reviseCount: reviseCount || "0",
+        remark,  // ✅ NEW — pass existing remarks to frontend
       });
     });
 
@@ -56,7 +83,7 @@ exports.getMeetingsSub = async (req, res) => {
 };
 
 // ============================================
-// POST — Save Meeting action (with Not Interested support)
+// POST — Save Meeting action
 // ============================================
 exports.submitMeetingsSubAction = async (req, res) => {
   try {
@@ -66,7 +93,7 @@ exports.submitMeetingsSubAction = async (req, res) => {
       channelPartnerName,
       reviseDate,
       remark,
-      notInterestedReason, // ✅ NEW
+      notInterestedReason,
     } = req.body;
 
     if (!rowNumber || !status) {
@@ -75,7 +102,6 @@ exports.submitMeetingsSubAction = async (req, res) => {
         .json({ success: false, message: "rowNumber and status required" });
     }
 
-    // ✅ Validate Not Interested has reason
     if (status === "Not Interested" && !notInterestedReason?.trim()) {
       return res.status(400).json({
         success: false,
@@ -83,25 +109,22 @@ exports.submitMeetingsSubAction = async (req, res) => {
       });
     }
 
-    // ✅ Read existing I:N row
     const currentRow = await req.sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!I${rowNumber}:N${rowNumber}`,
     });
-    const existing =
-      (currentRow.data.values && currentRow.data.values[0]) || [];
+    const existing = (currentRow.data.values && currentRow.data.values[0]) || [];
     const currentReviseCount = parseInt(existing[4] || "0", 10) || 0;
 
     let newReviseCount = currentReviseCount;
-    let newReviseDate = existing[3] || "";
-    let actualValue = existing[0] || "";
+    let newReviseDate  = existing[3] || "";
+    let actualValue    = existing[0] || "";
 
     if (status === "Revise") {
       newReviseCount = currentReviseCount + 1;
-      newReviseDate = reviseDate || "";
+      newReviseDate  = reviseDate || "";
     }
 
-    // ✅ Done, Not Done, Not Interested — all write timestamp to Actual (Col I)
     if (
       status === "Done" ||
       status === "Not Done" ||
@@ -110,13 +133,30 @@ exports.submitMeetingsSubAction = async (req, res) => {
       actualValue = getCurrentTimestamp();
     }
 
-    // ✅ Build final remark — for Not Interested, append reason
-    const finalRemark =
-      status === "Not Interested"
-        ? `${remark || ""}${remark ? " | " : ""}Reason: ${notInterestedReason}`
-        : remark || "";
+    // ✅ CHANGED — Build remark with reason (for NI) + append with timestamp
+    let remarkToSave = "";
+    if (remark && String(remark).trim()) {
+      const remarkWithReason =
+        status === "Not Interested"
+          ? `${remark.trim()} | Reason: ${notInterestedReason}`
+          : remark.trim();
+      remarkToSave = await buildAppendedRemarks(
+        req.sheets,
+        `N${rowNumber}`,
+        remarkWithReason,
+      );
+    } else if (status === "Not Interested") {
+      // Only reason, no manual remark
+      remarkToSave = await buildAppendedRemarks(
+        req.sheets,
+        `N${rowNumber}`,
+        `Reason: ${notInterestedReason}`,
+      );
+    } else {
+      // No new remark — keep existing
+      remarkToSave = existing[5] || "";
+    }
 
-    // ✅ Update I (Actual), J (Status), K (CP Name), L (Revise Date), M (Revise Count), N (Remark)
     await req.sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!I${rowNumber}:N${rowNumber}`,
@@ -129,16 +169,14 @@ exports.submitMeetingsSubAction = async (req, res) => {
             channelPartnerName || "",
             newReviseDate,
             newReviseCount,
-            finalRemark,
+            remarkToSave,
           ],
         ],
       },
     });
 
-    // ✅ NEW: Log Not Interested to dedicated sheet (best-effort, non-blocking)
     if (status === "Not Interested") {
       try {
-        // Read lead info from columns A-E for context
         const leadInfoRow = await req.sheets.spreadsheets.values.get({
           spreadsheetId: SPREADSHEET_ID,
           range: `${SHEET_NAME}!A${rowNumber}:E${rowNumber}`,
@@ -146,7 +184,7 @@ exports.submitMeetingsSubAction = async (req, res) => {
         const leadCols = leadInfoRow.data.values?.[0] || [];
         const uniqueId = leadCols[1] || "";
         const firmName = leadCols[2] || "";
-        const contact = leadCols[3] || "";
+        const contact  = leadCols[3] || "";
         const locality = leadCols[4] || "";
 
         const ts = getCurrentTimestamp();
@@ -160,12 +198,8 @@ exports.submitMeetingsSubAction = async (req, res) => {
               [
                 ts,
                 "Meetings Sub - Not Interested",
-                uniqueId,
-                firmName,
-                contact,
-                locality,
-                "", // project (N/A here)
-                "", // leadSource (N/A here)
+                uniqueId, firmName, contact, locality,
+                "", "",
                 channelPartnerName || "",
                 notInterestedReason,
                 req.user?.email || "",
@@ -176,11 +210,9 @@ exports.submitMeetingsSubAction = async (req, res) => {
         console.log(`✅ Not Interested logged: ${uniqueId} - ${firmName}`);
       } catch (logErr) {
         console.warn("⚠️ NI log failed:", logErr.message);
-        // Don't fail main request if logging fails
       }
     }
 
-    // ✅ Custom success message
     let message = "Meeting updated";
     if (status === "Not Interested") {
       message = "Marked Not Interested — logged to NI sheet";

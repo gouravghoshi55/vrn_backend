@@ -7,22 +7,22 @@ const LOGGER_SHEET_NAME = "Logger";
 const NOT_INTERESTED_SHEET = "Not Interested Reasons";
 
 function getCurrentTimestamp() {
-  const now = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
-  const d = String(now.getUTCDate()).padStart(2, "0"),
+  const now = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const d  = String(now.getUTCDate()).padStart(2, "0"),
     mo = String(now.getUTCMonth() + 1).padStart(2, "0"),
-    y = now.getUTCFullYear();
-  const h = String(now.getUTCHours()).padStart(2, "0"),
+    y  = now.getUTCFullYear();
+  const h  = String(now.getUTCHours()).padStart(2, "0"),
     mi = String(now.getUTCMinutes()).padStart(2, "0"),
-    s = String(now.getUTCSeconds()).padStart(2, "0");
+    s  = String(now.getUTCSeconds()).padStart(2, "0");
   return `${d}/${mo}/${y} ${h}:${mi}:${s}`;
 }
 
 function getShortTimestamp() {
-  const now = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
-  const d = String(now.getUTCDate()).padStart(2, "0"),
+  const now = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const d  = String(now.getUTCDate()).padStart(2, "0"),
     mo = String(now.getUTCMonth() + 1).padStart(2, "0"),
-    y = now.getUTCFullYear();
-  const h = String(now.getUTCHours()).padStart(2, "0"),
+    y  = now.getUTCFullYear();
+  const h  = String(now.getUTCHours()).padStart(2, "0"),
     mi = String(now.getUTCMinutes()).padStart(2, "0");
   return `[${d}/${mo}/${y} ${h}:${mi}]`;
 }

@@ -41,24 +41,23 @@ function getPlannedDateTime(dateStr) {
 }
 
 function getCurrentTimestamp() {
-  const now = new Date();
-  const d = String(now.getDate()).padStart(2, "0");
-  const mo = String(now.getMonth() + 1).padStart(2, "0");
-  const y = now.getFullYear();
-  const h = String(now.getHours()).padStart(2, "0");
-  const mi = String(now.getMinutes()).padStart(2, "0");
-  const s = String(now.getSeconds()).padStart(2, "0");
+  const now = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const d  = String(now.getUTCDate()).padStart(2, "0"),
+    mo = String(now.getUTCMonth() + 1).padStart(2, "0"),
+    y  = now.getUTCFullYear();
+  const h  = String(now.getUTCHours()).padStart(2, "0"),
+    mi = String(now.getUTCMinutes()).padStart(2, "0"),
+    s  = String(now.getUTCSeconds()).padStart(2, "0");
   return `${d}/${mo}/${y} ${h}:${mi}:${s}`;
 }
 
-// ✅ Short timestamp for remarks: [DD/MM/YYYY HH:MM]
 function getShortTimestamp() {
-  const now = new Date();
-  const d = String(now.getDate()).padStart(2, "0");
-  const mo = String(now.getMonth() + 1).padStart(2, "0");
-  const y = now.getFullYear();
-  const h = String(now.getHours()).padStart(2, "0");
-  const mi = String(now.getMinutes()).padStart(2, "0");
+  const now = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const d  = String(now.getUTCDate()).padStart(2, "0"),
+    mo = String(now.getUTCMonth() + 1).padStart(2, "0"),
+    y  = now.getUTCFullYear();
+  const h  = String(now.getUTCHours()).padStart(2, "0"),
+    mi = String(now.getUTCMinutes()).padStart(2, "0");
   return `[${d}/${mo}/${y} ${h}:${mi}]`;
 }
 

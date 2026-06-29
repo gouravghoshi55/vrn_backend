@@ -180,27 +180,33 @@ router.post("/update", async (req, res) => {
       });
     }
 
-    // ✅ NEW: No Connection — auto +15 days planned date
-    if (status === "No Connection") {
-      // Generate date 15 days from now at 10:00 AM IST
-      const futureDate = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
-      futureDate.setUTCDate(futureDate.getUTCDate() + 15);
+   // ✅ NEW: No Connection — auto +15 days planned date (skip Sunday)
+if (status === "No Connection") {
+  // Generate date 15 days from now at 10:00 AM IST
+  const futureDate = new Date(new Date().getTime() + 5.5 * 60 * 60 * 1000);
+  futureDate.setUTCDate(futureDate.getUTCDate() + 15);
 
-      const dd = String(futureDate.getUTCDate()).padStart(2, "0");
-      const mm = String(futureDate.getUTCMonth() + 1).padStart(2, "0");
-      const yyyy = futureDate.getUTCFullYear();
-      const noConnectionDate = `${dd}/${mm}/${yyyy} 10:00:00`;
+  // ✅ NEW: If 15th day falls on Sunday (getUTCDay() === 0), push to Monday
+  if (futureDate.getUTCDay() === 0) {
+    futureDate.setUTCDate(futureDate.getUTCDate() + 1);
+    console.log("📅 15th day was Sunday — shifted to Monday");
+  }
 
-      // Write to BOTH G (Planned) and J (Next Follow Up) for consistency
-      updates.push({
-        range: `'${SHEET_NAME}'!G${rowIndex}`,
-        values: [[noConnectionDate]],
-      });
-      updates.push({
-        range: `'${SHEET_NAME}'!J${rowIndex}`,
-        values: [[noConnectionDate]],
-      });
-    }
+  const dd = String(futureDate.getUTCDate()).padStart(2, "0");
+  const mm = String(futureDate.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = futureDate.getUTCFullYear();
+  const noConnectionDate = `${dd}/${mm}/${yyyy} 10:00:00`;
+
+  // Write to BOTH G (Planned) and J (Next Follow Up) for consistency
+  updates.push({
+    range: `'${SHEET_NAME}'!G${rowIndex}`,
+    values: [[noConnectionDate]],
+  });
+  updates.push({
+    range: `'${SHEET_NAME}'!J${rowIndex}`,
+    values: [[noConnectionDate]],
+  });
+}
 
     // ✅ Next Follow Up Date (Col J, index 9)
     if (nextFollowUpDate) {

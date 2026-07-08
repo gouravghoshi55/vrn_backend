@@ -295,6 +295,27 @@ router.post("/update", async (req, res) => {
         .status(400)
         .json({ success: false, error: "Missing rowIndex" });
 
+        // ✅ NEW — Check current status BEFORE any update
+    let currentStatus = "";
+    try {
+      const statusCheck = await req.sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `'${NBD_SHEET_NAME}'!W${rowIndex}`,
+      });
+      currentStatus = (statusCheck.data.values?.[0]?.[0] || "").trim().toLowerCase();
+    } catch (e) {}
+
+    // ✅ NEW — Block update if already Done / Not Interested / final state
+    const finalStatuses = ["done", "not interested"];
+    if (finalStatuses.includes(currentStatus)) {
+      return res.status(409).json({
+        success: false,
+        error: "LEAD_ALREADY_PROCESSED",
+        message: `Yeh lead already "${currentStatus.toUpperCase()}" mark ho chuki hai. Refresh karke dekho.`,
+        currentStatus,
+      });
+    }
+
     const updates = [];
     const timestamp = getCurrentTimestamp();
 

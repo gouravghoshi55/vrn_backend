@@ -61,7 +61,7 @@ function getDoerTag(user) {
 function getFSRDoerTag(user) {
   if (!user) return null;
   if (user.assignedModule !== "fsr") return null;
-  const m = { "bdm4@company.com": "BDM4", "bdm5@company.com": "BDM5" ,  "bdm7@company.com": "BDM7" };
+  const m = { "bdm4@company.com": "BDM4", "bdm5@company.com": "BDM5" ,  "bdm7@company.com": "BDM7","mohan@company.com": "Mohan Sir", };
   return m[user.email?.toLowerCase()] || null;
 }
 
